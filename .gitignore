@@ -1,0 +1,98 @@
+# ============================================================
+# NeuroWave .gitignore
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+eggs/
+*.whl
+pip-wheel-metadata/
+*.manifest
+*.spec
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# --- CUDA ---
+*.cubin
+*.fatbin
+*.ptx
+*.gpu
+*.i
+*.ii
+*.cudafe1.c
+*.cudafe1.cpp
+*.cudafe1.gpu
+*.cudafe1.stub.c
+
+# --- Data & outputs ---
+*.hdf5
+*.h5
+*.npy
+*.npz
+*.pkl
+*.pickle
+datasets/generated/
+outputs/
+results/
+*.log
+
+# --- Visualization ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.gif
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+*.tmp
+
+# --- Testing ---
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# --- Documentation ---
+docs/_build/
+
+# --- Benchmarks output ---
+benchmarks/results/
+benchmarks/outputs/
+
+# --- Misc ---
+*.bak
+*.orig
+.env
+.env.local
