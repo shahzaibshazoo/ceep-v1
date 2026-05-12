@@ -222,8 +222,8 @@ class CPML(BaseBoundary):
     """
 
     thickness: int = 10
-    order: int = 3
-    sigma_factor: float = 1.5
+    order: int = 4
+    sigma_factor: float = 2.0
     alpha_max: float = 0.05
     kappa_max: float = 1.0
 

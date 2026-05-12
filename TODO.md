@@ -76,9 +76,9 @@
 
 ### 2A. PML Boundaries
 - [x] Implement CPML (Convolutional PML) for 2D *(done in Phase 1)*
-- [ ] PML parameter optimization (grading, thickness)
-- [ ] Unit tests and reflection coefficient benchmark
-- [ ] Theory doc: PML derivation
+- [x] PML parameter optimization (grading, thickness)
+- [x] Unit tests and reflection coefficient benchmark (best: -130 dB)
+- [x] Theory doc: PML derivation
 
 ### 2B. Dispersive Materials
 - [ ] Implement Debye model (1-pole, multi-pole)
