@@ -386,3 +386,47 @@ class TestFDTD2D:
         
         # Ensure stability
         assert np.all(np.isfinite(hz))
+
+class TestDispersiveMaterials:
+    """Tests for Debye and other dispersive material models."""
+    
+    def test_debye_medium_delays_and_attenuates(self):
+        """A wave in a Debye medium should be delayed and attenuated vs free space."""
+        from neurowave.materials.dispersive import DebyePole
+        
+        # Free space solver
+        grid_fs = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
+        config_fs = SimulationConfig(grid=grid_fs, mode=SimulationMode.TMZ, total_steps=200)
+        src_fs = GaussianSource(x=10, y=5, frequency_max=20e9)
+        solver_fs = FDTD2D(config=config_fs, sources=[src_fs])
+        
+        # Dispersive solver
+        grid_disp = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
+        config_disp = SimulationConfig(grid=grid_disp, mode=SimulationMode.TMZ, total_steps=200)
+        src_disp = GaussianSource(x=10, y=5, frequency_max=20e9)
+        solver_disp = FDTD2D(config=config_disp, sources=[src_disp])
+        
+        # Add Debye pole (water-like relaxation at microwave freq)
+        pole = DebyePole(delta_eps=70.0, tau=1e-11)
+        # Note: set_material_region automatically sets eps_inf
+        solver_disp.grid.set_material_region(20, 80, 0, 10, eps_inf=5.0, debye_poles=[pole])
+        
+        solver_fs.run(200)
+        solver_disp.run(200)
+        
+        ez_fs = solver_fs.get_field("Ez")
+        ez_disp = solver_disp.get_field("Ez")
+        
+        # Check that the wave in dispersive medium has not traveled as far
+        peak_idx_fs = np.argmax(np.abs(ez_fs[:, 5]))
+        peak_idx_disp = np.argmax(np.abs(ez_disp[:, 5]))
+        
+        # FS should have traveled further than dispersive
+        assert peak_idx_fs > peak_idx_disp
+        
+        # The wave should be attenuated compared to free space inside the region
+        max_fs = np.max(np.abs(ez_fs[25:80, 5]))
+        max_disp = np.max(np.abs(ez_disp[25:80, 5]))
+        
+        assert max_disp < max_fs
+

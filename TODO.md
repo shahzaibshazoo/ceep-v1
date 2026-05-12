@@ -81,11 +81,11 @@
 - [x] Theory doc: PML derivation
 
 ### 2B. Dispersive Materials
-- [ ] Implement Debye model (1-pole, multi-pole)
+- [x] Implement Debye model (1-pole, multi-pole)
 - [ ] Implement Drude model
 - [ ] Implement Lorentz model
-- [ ] Auxiliary Differential Equation (ADE) update scheme
-- [ ] Unit tests and validation
+- [x] Auxiliary Differential Equation (ADE) update scheme
+- [x] Unit tests and validation
 - [ ] Theory doc: dispersive material models
 
 ### 2C. Frequency Domain

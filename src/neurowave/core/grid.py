@@ -105,9 +105,13 @@ class Grid2D:
 
     # Material properties
     eps_r: npt.NDArray[np.float64] = field(init=False, repr=False)
+    eps_inf: npt.NDArray[np.float64] = field(init=False, repr=False)
     mu_r: npt.NDArray[np.float64] = field(init=False, repr=False)
     sigma_e: npt.NDArray[np.float64] = field(init=False, repr=False)
     sigma_m: npt.NDArray[np.float64] = field(init=False, repr=False)
+
+    # Dispersive material manager
+    dispersive: "DispersiveManager" = field(init=False, repr=False)
 
     # Update coefficients (precomputed for performance)
     _ca: npt.NDArray[np.float64] = field(init=False, repr=False)
@@ -143,9 +147,13 @@ class Grid2D:
 
         # Material properties — default: free space (ε_r=1, μ_r=1, σ=0)
         self.eps_r = np.ones(shape, dtype=np.float64)
+        self.eps_inf = np.ones(shape, dtype=np.float64)
         self.mu_r = np.ones(shape, dtype=np.float64)
         self.sigma_e = np.zeros(shape, dtype=np.float64)
         self.sigma_m = np.zeros(shape, dtype=np.float64)
+
+        from neurowave.materials.dispersive import DispersiveManager
+        self.dispersive = DispersiveManager(nx, ny, max_poles=4)
 
         # Precompute update coefficients
         self._precompute_coefficients()
@@ -172,7 +180,11 @@ class Grid2D:
         positive for physical materials (σ ≥ 0, ε > 0), so division is safe.
         """
         dt = self.config.dt
-        eps = self.eps_r * EPS_0
+        
+        # Add effective permittivity from dispersive materials
+        eps_eff_add = self.dispersive.compute_coefficients(dt)
+        eps = self.eps_inf * EPS_0 + eps_eff_add
+        
         mu = self.mu_r * MU_0
 
         # E-field coefficients
@@ -195,6 +207,8 @@ class Grid2D:
         mu_r: float = 1.0,
         sigma_e: float = 0.0,
         sigma_m: float = 0.0,
+        eps_inf: Optional[float] = None,
+        debye_poles: Optional[list] = None,
     ) -> None:
         """Set material properties in a rectangular region.
 
@@ -231,10 +245,18 @@ class Grid2D:
         if sigma_e < 0.0:
             raise ValueError(f"Electric conductivity must be ≥ 0.0, got {sigma_e}")
 
+        if eps_inf is None:
+            eps_inf = eps_r
+
         self.eps_r[x_start:x_end, y_start:y_end] = eps_r
+        self.eps_inf[x_start:x_end, y_start:y_end] = eps_inf
         self.mu_r[x_start:x_end, y_start:y_end] = mu_r
         self.sigma_e[x_start:x_end, y_start:y_end] = sigma_e
         self.sigma_m[x_start:x_end, y_start:y_end] = sigma_m
+
+        if debye_poles:
+            region = (slice(x_start, x_end), slice(y_start, y_end))
+            self.dispersive.add_poles(region, debye_poles)
 
         # Recompute coefficients with updated materials
         self._precompute_coefficients()
@@ -248,6 +270,8 @@ class Grid2D:
         mu_r: float = 1.0,
         sigma_e: float = 0.0,
         sigma_m: float = 0.0,
+        eps_inf: Optional[float] = None,
+        debye_poles: Optional[list] = None,
     ) -> None:
         """Set material properties in a circular region.
 
@@ -262,15 +286,22 @@ class Grid2D:
         """
         if eps_r < 1.0:
             raise ValueError(f"Relative permittivity must be ≥ 1.0, got {eps_r}")
+            
+        if eps_inf is None:
+            eps_inf = eps_r
 
         nx, ny = self.config.grid.nx, self.config.grid.ny
         y_grid, x_grid = np.meshgrid(np.arange(ny), np.arange(nx))
         mask = (x_grid - center_x) ** 2 + (y_grid - center_y) ** 2 <= radius ** 2
 
         self.eps_r[mask] = eps_r
+        self.eps_inf[mask] = eps_inf
         self.mu_r[mask] = mu_r
         self.sigma_e[mask] = sigma_e
         self.sigma_m[mask] = sigma_m
+        
+        if debye_poles:
+            self.dispersive.add_poles(mask, debye_poles)
 
         self._precompute_coefficients()
 

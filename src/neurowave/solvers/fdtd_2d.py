@@ -136,6 +136,11 @@ class FDTD2D(BaseSolver):
         dy = self.config.grid.dy
         ca = self.grid._ca
         cb = self.grid._cb
+        disp = self.grid.dispersive.active_poles > 0
+
+        if disp:
+            ez_old = self.grid.ez.copy()
+            sum_gj = self.grid.dispersive.get_sum_gamma_j("Ez")
 
         # curl_h = dHy/dx - dHx/dy
         self.grid.ez[1:, 1:] = (
@@ -145,6 +150,10 @@ class FDTD2D(BaseSolver):
                 - (self.grid.hx[1:, 1:] - self.grid.hx[1:, :-1]) / dy
             )
         )
+        
+        if disp:
+            self.grid.ez[1:, 1:] -= cb[1:, 1:] * sum_gj[1:, 1:]
+            self.grid.dispersive.update_j_fields("Ez", self.grid.ez, ez_old, self.config.dt)
 
     def _update_h_fields_tez(self) -> None:
         """Update Hz for TEz mode using vectorized NumPy.
@@ -177,6 +186,13 @@ class FDTD2D(BaseSolver):
         dy = self.config.grid.dy
         ca = self.grid._ca
         cb = self.grid._cb
+        disp = self.grid.dispersive.active_poles > 0
+
+        if disp:
+            ex_old = self.grid.ex.copy()
+            ey_old = self.grid.ey.copy()
+            sum_gj_ex = self.grid.dispersive.get_sum_gamma_j("Ex")
+            sum_gj_ey = self.grid.dispersive.get_sum_gamma_j("Ey")
 
         # Ex update: dHz/dy
         self.grid.ex[:, 1:] = (
@@ -189,6 +205,12 @@ class FDTD2D(BaseSolver):
             ca[1:, :] * self.grid.ey[1:, :]
             - cb[1:, :] / dx * (self.grid.hz[1:, :] - self.grid.hz[:-1, :])
         )
+        
+        if disp:
+            self.grid.ex[:, 1:] -= cb[:, 1:] * sum_gj_ex[:, 1:]
+            self.grid.ey[1:, :] -= cb[1:, :] * sum_gj_ey[1:, :]
+            self.grid.dispersive.update_j_fields("Ex", self.grid.ex, ex_old, self.config.dt)
+            self.grid.dispersive.update_j_fields("Ey", self.grid.ey, ey_old, self.config.dt)
 
     def _inject_sources(self) -> None:
         """Inject all sources as soft sources (additive)."""
