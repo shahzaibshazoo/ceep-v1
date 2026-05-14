@@ -158,44 +158,30 @@ class Grid2D:
         self._precompute_coefficients()
 
     def _precompute_coefficients(self) -> None:
-        """Precompute FDTD update coefficients from material properties.
-
-        For the E-field update with lossy dielectrics:
-
-            Ca = (1 - σ_e·Δt / (2·ε)) / (1 + σ_e·Δt / (2·ε))
-            Cb = (Δt / ε) / (1 + σ_e·Δt / (2·ε))
-
-        For the H-field update with magnetic losses:
-
-            Da = (1 - σ_m·Δt / (2·μ)) / (1 + σ_m·Δt / (2·μ))
-            Db = (Δt / μ) / (1 + σ_m·Δt / (2·μ))
-
-        These coefficients encode all material effects and need only be
-        computed once (or when materials change).
-
-        Notes
-        -----
-        Numerical stability: The denominators (1 + σΔt/2ε) are always
-        positive for physical materials (σ ≥ 0, ε > 0), so division is safe.
-        """
+        """Precompute FDTD update coefficients from material properties."""
         dt = self.config.dt
+        xp = xpb.get_backend_module()
+
+        # Get arrays — force onto active backend device
+        eps_inf = xp.asarray(self.eps_inf)
+        mu_r = xp.asarray(self.mu_r)
+        sigma_e = xp.asarray(self.sigma_e)
+        sigma_m = xp.asarray(self.sigma_m)
 
         # Add effective permittivity from dispersive materials
         eps_eff_add = self.dispersive.compute_coefficients(dt)
-        # Ensure eps_eff_add is on same device as grid arrays
-        if xpb.is_gpu_active() and isinstance(eps_eff_add, np.ndarray):
-            eps_eff_add = xpb.to_backend(eps_eff_add)
-        eps = self.eps_inf * EPS_0 + eps_eff_add
+        eps_eff_add = xp.asarray(eps_eff_add)
 
-        mu = self.mu_r * MU_0
+        eps = eps_inf * EPS_0 + eps_eff_add
+        mu = mu_r * MU_0
 
         # E-field coefficients
-        sigma_dt_2eps = self.sigma_e * dt / (2.0 * eps)
+        sigma_dt_2eps = sigma_e * dt / (2.0 * eps)
         self._ca = (1.0 - sigma_dt_2eps) / (1.0 + sigma_dt_2eps)
         self._cb = (dt / eps) / (1.0 + sigma_dt_2eps)
 
         # H-field coefficients
-        sigma_m_dt_2mu = self.sigma_m * dt / (2.0 * mu)
+        sigma_m_dt_2mu = sigma_m * dt / (2.0 * mu)
         self._da = (1.0 - sigma_m_dt_2mu) / (1.0 + sigma_m_dt_2mu)
         self._db = (dt / mu) / (1.0 + sigma_m_dt_2mu)
 
