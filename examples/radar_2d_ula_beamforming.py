@@ -172,10 +172,8 @@ def run_batched_fdtd(
     element_positions: List[Tuple[int, int]],
     eps_grid: np.ndarray,
     dx: float,
-    dt: float,
     total_steps: int,
     frequency: float,
-    bandwidth: float,
     use_gpu: bool = True
 ) -> np.ndarray:
     """Run batched 2D FDTD for all ULA elements simultaneously.
@@ -205,14 +203,12 @@ def run_batched_fdtd(
     # Initialize batched solver (THIS IS THE KEY!)
     solver = BatchedFDTD2D(
         nx=nx, ny=ny,
-        dx=dx, dy=dx,
-        dt=dt,
+        dx=dx,
         total_steps=total_steps,
         cpml_thickness=15,
         source_positions=element_positions,
         probe_positions=element_positions,
-        frequency=frequency,
-        bandwidth=bandwidth
+        frequency=frequency
     )
 
     # Set geometry
@@ -591,8 +587,8 @@ def main():
     t_start = time.time()
 
     s_matrix_time = run_batched_fdtd(
-        element_positions, eps_grid, DX, DT, TOTAL_STEPS,
-        FREQUENCY, BANDWIDTH, use_gpu=True
+        element_positions, eps_grid, DX, TOTAL_STEPS,
+        FREQUENCY, use_gpu=True
     )
 
     t_elapsed = time.time() - t_start
