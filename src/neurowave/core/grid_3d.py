@@ -80,18 +80,34 @@ class Grid3D:
         self._precompute_coefficients()
 
     def _precompute_coefficients(self) -> None:
-        """Precompute FDTD update coefficients."""
+        """Precompute FDTD update coefficients.
+
+        Computes on CPU then transfers to active backend device.
+        """
         dt = self.dt
-        eps = self.eps_r * EPS_0
-        mu = self.mu_r * MU_0
 
-        sigma_dt_2eps = self.sigma_e * dt / (2.0 * eps)
-        self._ca = (1.0 - sigma_dt_2eps) / (1.0 + sigma_dt_2eps)
-        self._cb = (dt / eps) / (1.0 + sigma_dt_2eps)
+        # Compute on CPU for reliability
+        eps_r = np.asarray(xpb.to_numpy(self.eps_r) if not isinstance(self.eps_r, np.ndarray) else self.eps_r)
+        mu_r = np.asarray(xpb.to_numpy(self.mu_r) if not isinstance(self.mu_r, np.ndarray) else self.mu_r)
+        sigma_e = np.asarray(xpb.to_numpy(self.sigma_e) if not isinstance(self.sigma_e, np.ndarray) else self.sigma_e)
+        sigma_m = np.asarray(xpb.to_numpy(self.sigma_m) if not isinstance(self.sigma_m, np.ndarray) else self.sigma_m)
 
-        sigma_m_dt_2mu = self.sigma_m * dt / (2.0 * mu)
-        self._da = (1.0 - sigma_m_dt_2mu) / (1.0 + sigma_m_dt_2mu)
-        self._db = (dt / mu) / (1.0 + sigma_m_dt_2mu)
+        eps = eps_r * EPS_0
+        mu = mu_r * MU_0
+
+        sigma_dt_2eps = sigma_e * dt / (2.0 * eps)
+        ca = (1.0 - sigma_dt_2eps) / (1.0 + sigma_dt_2eps)
+        cb = (dt / eps) / (1.0 + sigma_dt_2eps)
+
+        sigma_m_dt_2mu = sigma_m * dt / (2.0 * mu)
+        da = (1.0 - sigma_m_dt_2mu) / (1.0 + sigma_m_dt_2mu)
+        db = (dt / mu) / (1.0 + sigma_m_dt_2mu)
+
+        # Transfer to active backend
+        self._ca = xpb.to_backend(ca)
+        self._cb = xpb.to_backend(cb)
+        self._da = xpb.to_backend(da)
+        self._db = xpb.to_backend(db)
 
     def set_material_region(
         self,

@@ -158,32 +158,41 @@ class Grid2D:
         self._precompute_coefficients()
 
     def _precompute_coefficients(self) -> None:
-        """Precompute FDTD update coefficients from material properties."""
+        """Precompute FDTD update coefficients from material properties.
+
+        Computes on CPU (numpy) then transfers to active backend device.
+        This avoids any mixed numpy/cupy issues during computation.
+        """
         dt = self.config.dt
-        xp = xpb.get_backend_module()
 
-        # Get arrays — force onto active backend device
-        eps_inf = xp.asarray(self.eps_inf)
-        mu_r = xp.asarray(self.mu_r)
-        sigma_e = xp.asarray(self.sigma_e)
-        sigma_m = xp.asarray(self.sigma_m)
+        # Always compute coefficients on CPU with numpy for reliability
+        eps_inf = np.asarray(xpb.to_numpy(self.eps_inf) if not isinstance(self.eps_inf, np.ndarray) else self.eps_inf)
+        mu_r = np.asarray(xpb.to_numpy(self.mu_r) if not isinstance(self.mu_r, np.ndarray) else self.mu_r)
+        sigma_e = np.asarray(xpb.to_numpy(self.sigma_e) if not isinstance(self.sigma_e, np.ndarray) else self.sigma_e)
+        sigma_m = np.asarray(xpb.to_numpy(self.sigma_m) if not isinstance(self.sigma_m, np.ndarray) else self.sigma_m)
 
-        # Add effective permittivity from dispersive materials
         eps_eff_add = self.dispersive.compute_coefficients(dt)
-        eps_eff_add = xp.asarray(eps_eff_add)
+        if not isinstance(eps_eff_add, np.ndarray):
+            eps_eff_add = np.asarray(xpb.to_numpy(eps_eff_add))
 
         eps = eps_inf * EPS_0 + eps_eff_add
         mu = mu_r * MU_0
 
         # E-field coefficients
         sigma_dt_2eps = sigma_e * dt / (2.0 * eps)
-        self._ca = (1.0 - sigma_dt_2eps) / (1.0 + sigma_dt_2eps)
-        self._cb = (dt / eps) / (1.0 + sigma_dt_2eps)
+        ca = (1.0 - sigma_dt_2eps) / (1.0 + sigma_dt_2eps)
+        cb = (dt / eps) / (1.0 + sigma_dt_2eps)
 
         # H-field coefficients
         sigma_m_dt_2mu = sigma_m * dt / (2.0 * mu)
-        self._da = (1.0 - sigma_m_dt_2mu) / (1.0 + sigma_m_dt_2mu)
-        self._db = (dt / mu) / (1.0 + sigma_m_dt_2mu)
+        da = (1.0 - sigma_m_dt_2mu) / (1.0 + sigma_m_dt_2mu)
+        db = (dt / mu) / (1.0 + sigma_m_dt_2mu)
+
+        # Transfer to active backend (GPU if cupy, no-op if numpy)
+        self._ca = xpb.to_backend(ca)
+        self._cb = xpb.to_backend(cb)
+        self._da = xpb.to_backend(da)
+        self._db = xpb.to_backend(db)
 
     def set_material_region(
         self,
