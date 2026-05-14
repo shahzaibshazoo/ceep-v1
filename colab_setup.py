@@ -67,8 +67,13 @@ def main():
         sys.exit(1)
     print("✓ CEEP installed\n")
 
-    # 4. Verify installation
-    print("[4/4] Verifying installation...")
+    # 4. Add to Python path (Colab fix)
+    print("[4/5] Adding CEEP to Python path...")
+    print("import sys; sys.path.insert(0, '/content/ceep-v1/src')")
+    print("✓ Path configured\n")
+
+    # 5. Verify installation
+    print("[5/5] Verifying installation...")
     verify_code = """
 import sys
 sys.path.insert(0, '/content/ceep-v1/src')
@@ -89,10 +94,13 @@ print_backend_info()
     print(" ✓ CEEP Setup Complete!")
     print("="*60)
     print()
-    print("Quick test:")
+    print("IMPORTANT: Add this line to your notebook/script:")
+    print("  import sys")
+    print("  sys.path.insert(0, '/content/ceep-v1/src')")
+    print()
+    print("Then imports work:")
     print("  from ceep.core.backend import set_backend")
     print("  set_backend('cupy')")
-    print("  print('GPU ready!')")
     print()
 
 if __name__ == "__main__":
