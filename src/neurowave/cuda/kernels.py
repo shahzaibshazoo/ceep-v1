@@ -296,6 +296,181 @@ else:
         raise RuntimeError("CuPy not available")
 
 
+    # ===========================================================================
+    # Batched 2D TMz Kernels (multiple simulations in parallel)
+    # ===========================================================================
+
+    _update_h_batched_2d_src = r'''
+    extern "C" __global__
+    void update_h_batched_2d(
+        double* __restrict__ hx,
+        double* __restrict__ hy,
+        const double* __restrict__ ez,
+        const double* __restrict__ da,
+        const double* __restrict__ db,
+        int batch, int nx, int ny,
+        double inv_dx, double inv_dy
+    ) {
+        // 3D grid: (batch, nx, ny)
+        int b = blockDim.z * blockIdx.z + threadIdx.z;
+        int i = blockDim.x * blockIdx.x + threadIdx.x;
+        int j = blockDim.y * blockIdx.y + threadIdx.y;
+
+        if (b >= batch || i >= nx || j >= ny) return;
+
+        int grid_size = nx * ny;
+        int idx = b * grid_size + i * ny + j;
+        // Coefficients are shared: index without batch
+        int mat_idx = i * ny + j;
+
+        // Hx update: valid for j < ny-1
+        if (j < ny - 1) {
+            int idx_jp1 = b * grid_size + i * ny + (j + 1);
+            hx[idx] = da[mat_idx] * hx[idx]
+                     - db[mat_idx] * inv_dy * (ez[idx_jp1] - ez[idx]);
+        }
+
+        // Hy update: valid for i < nx-1
+        if (i < nx - 1) {
+            int idx_ip1 = b * grid_size + (i + 1) * ny + j;
+            hy[idx] = da[mat_idx] * hy[idx]
+                     + db[mat_idx] * inv_dx * (ez[idx_ip1] - ez[idx]);
+        }
+    }
+    '''
+
+    _update_e_batched_2d_src = r'''
+    extern "C" __global__
+    void update_e_batched_2d(
+        double* __restrict__ ez,
+        const double* __restrict__ hx,
+        const double* __restrict__ hy,
+        const double* __restrict__ ca,
+        const double* __restrict__ cb,
+        int batch, int nx, int ny,
+        double inv_dx, double inv_dy
+    ) {
+        int b = blockDim.z * blockIdx.z + threadIdx.z;
+        int i = blockDim.x * blockIdx.x + threadIdx.x;
+        int j = blockDim.y * blockIdx.y + threadIdx.y;
+
+        if (b >= batch || i < 1 || i >= nx || j < 1 || j >= ny) return;
+
+        int grid_size = nx * ny;
+        int idx = b * grid_size + i * ny + j;
+        int idx_im1 = b * grid_size + (i - 1) * ny + j;
+        int idx_jm1 = b * grid_size + i * ny + (j - 1);
+        int mat_idx = i * ny + j;
+
+        double curl_h = (hy[idx] - hy[idx_im1]) * inv_dx
+                      - (hx[idx] - hx[idx_jm1]) * inv_dy;
+
+        ez[idx] = ca[mat_idx] * ez[idx] + cb[mat_idx] * curl_h;
+    }
+    '''
+
+    _inject_sources_batched_src = r'''
+    extern "C" __global__
+    void inject_sources_batched(
+        double* __restrict__ ez,
+        const int* __restrict__ src_x,
+        const int* __restrict__ src_y,
+        double waveform_val,
+        int batch, int nx, int ny
+    ) {
+        int b = threadIdx.x;
+        if (b >= batch) return;
+
+        int grid_size = nx * ny;
+        int idx = b * grid_size + src_x[b] * ny + src_y[b];
+        ez[idx] += waveform_val;
+    }
+    '''
+
+    _record_probes_batched_src = r'''
+    extern "C" __global__
+    void record_probes_batched(
+        const double* __restrict__ ez,
+        double* __restrict__ probe_data,
+        const int* __restrict__ prb_x,
+        const int* __restrict__ prb_y,
+        int batch, int nx, int ny,
+        int num_probes, int step, int total_steps
+    ) {
+        int b = blockDim.x * blockIdx.x + threadIdx.x;
+        int p = blockDim.y * blockIdx.y + threadIdx.y;
+
+        if (b >= batch || p >= num_probes) return;
+
+        int grid_size = nx * ny;
+        int ez_idx = b * grid_size + prb_x[p] * ny + prb_y[p];
+        int out_idx = (b * num_probes + p) * total_steps + step;
+        probe_data[out_idx] = ez[ez_idx];
+    }
+    '''
+
+    # Compile batched kernels
+    _kernel_h_batched_2d = cp.RawKernel(_update_h_batched_2d_src, 'update_h_batched_2d')
+    _kernel_e_batched_2d = cp.RawKernel(_update_e_batched_2d_src, 'update_e_batched_2d')
+    _kernel_inject_batched = cp.RawKernel(_inject_sources_batched_src, 'inject_sources_batched')
+    _kernel_record_batched = cp.RawKernel(_record_probes_batched_src, 'record_probes_batched')
+
+
+    def launch_batched_h_2d(hx, hy, ez, da, db, batch, nx, ny, dx, dy):
+        """Launch batched H-field update for multiple simulations."""
+        block = (8, 8, 4)  # (x, y, batch)
+        grid = (
+            math.ceil(nx / block[0]),
+            math.ceil(ny / block[1]),
+            math.ceil(batch / block[2])
+        )
+        _kernel_h_batched_2d(
+            grid, block,
+            (hx, hy, ez, da, db,
+             np.int32(batch), np.int32(nx), np.int32(ny),
+             np.float64(1.0 / dx), np.float64(1.0 / dy))
+        )
+
+
+    def launch_batched_e_2d(ez, hx, hy, ca, cb, batch, nx, ny, dx, dy):
+        """Launch batched E-field update for multiple simulations."""
+        block = (8, 8, 4)
+        grid = (
+            math.ceil(nx / block[0]),
+            math.ceil(ny / block[1]),
+            math.ceil(batch / block[2])
+        )
+        _kernel_e_batched_2d(
+            grid, block,
+            (ez, hx, hy, ca, cb,
+             np.int32(batch), np.int32(nx), np.int32(ny),
+             np.float64(1.0 / dx), np.float64(1.0 / dy))
+        )
+
+
+    def launch_batched_inject(ez, src_x, src_y, waveform_val, batch, nx, ny):
+        """Launch batched source injection."""
+        _kernel_inject_batched(
+            (1,), (batch,),
+            (ez, src_x, src_y,
+             np.float64(waveform_val),
+             np.int32(batch), np.int32(nx), np.int32(ny))
+        )
+
+
+    def launch_batched_record(ez, probe_data, prb_x, prb_y, batch, nx, ny,
+                              num_probes, step, total_steps):
+        """Launch batched probe recording."""
+        block = (min(32, batch), min(32, num_probes))
+        grid = (math.ceil(batch / block[0]), math.ceil(num_probes / block[1]))
+        _kernel_record_batched(
+            grid, block,
+            (ez, probe_data, prb_x, prb_y,
+             np.int32(batch), np.int32(nx), np.int32(ny),
+             np.int32(num_probes), np.int32(step), np.int32(total_steps))
+        )
+
+
 def cuda_kernels_available() -> bool:
     """Check if fused CUDA kernels are available."""
     return HAS_CUPY
