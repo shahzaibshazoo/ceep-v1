@@ -12,9 +12,13 @@ from ceep.phantoms.head_models import (
     visualize_phantom_slice
 )
 
+# Alias for convenience
+BrainPhantom = DetailedBrainPhantom
+
 __all__ = [
     'SimpleHeadPhantom',
     'DetailedBrainPhantom',
+    'BrainPhantom',  # Alias
     'SkinLayerPhantom',
     'visualize_phantom_slice'
 ]
