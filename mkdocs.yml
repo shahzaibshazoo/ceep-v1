@@ -1,0 +1,65 @@
+site_name: NeuroWave
+site_description: GPU-Accelerated FDTD Electromagnetic Simulation for Biomedical Microwave Imaging
+site_url: https://shahzaibshazoo.github.io/ceep-v1
+repo_url: https://github.com/shahzaibshazoo/ceep-v1
+repo_name: shahzaibshazoo/ceep-v1
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - content.code.annotate
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Quick Start: getting-started/quickstart.md
+    - Google Colab: getting-started/colab.md
+  - Guide:
+    - Imaging Simulation: guide/imaging-pipeline.md
+    - Antenna Arrays: guide/antenna-arrays.md
+    - Materials & Tissues: guide/materials.md
+    - GPU Acceleration: guide/gpu.md
+    - 3D Simulations: guide/3d.md
+  - Theory:
+    - FDTD Method: theory/maxwell_fdtd.md
+    - PML Boundaries: theory/pml.md
+    - Dispersive Materials: theory/dispersive_materials.md
+  - API Reference:
+    - Solvers: api/solvers.md
+    - Materials: api/materials.md
+    - Antennas: api/antennas.md
+    - Imaging: api/imaging.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search

@@ -91,8 +91,13 @@ docs/_build/
 benchmarks/results/
 benchmarks/outputs/
 
+# --- Claude / AI session ---
+.claude/
+
 # --- Misc ---
 *.bak
 *.orig
 .env
 .env.local
+scratch.py
+*.backup

@@ -1,33 +1,31 @@
 """
-NeuroWave — GPU-Accelerated Electromagnetic Simulation Framework
-================================================================
+NeuroWave — GPU-Accelerated FDTD Electromagnetic Simulation
+============================================================
 
-A modern, GPU-native alternative to Meep/PyMeep for computational
-electromagnetics, biomedical microwave imaging, and AI-integrated
-physics simulation.
+A GPU-native Maxwell equation solver for biomedical microwave imaging.
 
-Core Modules
-------------
-- ``core``       : Grid, field arrays, simulation engine
-- ``cuda``       : CUDA kernels, GPU memory management
-- ``materials``  : Dielectric models, tissue libraries
-- ``boundaries`` : ABC, PML, periodic boundaries
-- ``sources``    : Gaussian, sinusoidal, custom sources
-- ``solvers``    : FDTD solvers, frequency-domain extractors
-- ``visualization`` : Real-time & post-processing visualization
-- ``ai``         : PyTorch integration, differentiable physics
+Quick Start::
 
-Philosophy
-----------
-Correctness → Reproducibility → Performance → Elegance
+    from neurowave.core.backend import set_backend
+    from neurowave.solvers.fdtd_2d_batched import BatchedFDTD2D
 
-License
+    set_backend('cupy')  # Use GPU
+    solver = BatchedFDTD2D(nx=300, ny=300, dx=1e-3, ...)
+    s_matrix = solver.run()
+
+Modules
 -------
-MIT License. See LICENSE file for details.
+- ``core``        : Backend, grid, configuration
+- ``solvers``     : FDTD2D, FDTD3D, BatchedFDTD2D
+- ``boundaries``  : CPML, Mur ABC
+- ``sources``     : Gaussian, modulated Gaussian, plane wave
+- ``materials``   : Dispersive models, tissue database
+- ``antennas``    : Array geometries (circular, planar, ULA, etc.)
+- ``phantoms``    : Head models with hemorrhage
+- ``imaging``     : DAS beamforming reconstruction
+- ``cuda``        : Fused CUDA kernels
 """
 
-__version__ = "0.1.0-dev"
-__author__ = "NeuroWave Contributors"
+__version__ = "0.1.0"
+__author__ = "Shahzaib Elbert"
 __license__ = "MIT"
-
-# Lazy imports will be added as modules are implemented
