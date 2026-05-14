@@ -22,6 +22,7 @@ import numpy as np
 import numpy.typing as npt
 
 from neurowave.core.constants import EPS_0
+from neurowave.core import backend as xpb
 
 
 # ---------------------------------------------------------------------------
@@ -156,43 +157,43 @@ class DispersiveManager:
         self.pole_types: list[str] = ['none'] * max_poles
 
         # Physical parameters per pole (Debye: delta_eps, tau)
-        self.delta_eps = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.tau = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.delta_eps = xpb.zeros((max_poles, nx, ny))
+        self.tau = xpb.zeros((max_poles, nx, ny))
 
         # Cole-Cole alpha parameter
-        self.alpha = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.alpha = xpb.zeros((max_poles, nx, ny))
 
         # Drude/Lorentz extra parameters
-        self.omega_p = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.omega_0 = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.damping = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.omega_p = xpb.zeros((max_poles, nx, ny))
+        self.omega_0 = xpb.zeros((max_poles, nx, ny))
+        self.damping = xpb.zeros((max_poles, nx, ny))
 
         # Precomputed ADE coefficients (unified for all pole types)
-        self.k1 = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.k2 = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.gamma = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.k1 = xpb.zeros((max_poles, nx, ny))
+        self.k2 = xpb.zeros((max_poles, nx, ny))
+        self.gamma = xpb.zeros((max_poles, nx, ny))
 
         # Lorentz 2nd-order: extra coefficients and previous-step storage
-        self.k3 = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.k4 = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.k3 = xpb.zeros((max_poles, nx, ny))
+        self.k4 = xpb.zeros((max_poles, nx, ny))
 
         # Cole-Cole recursive convolution coefficients (Kelley & Luebbers method)
         # We store max_rc_order terms per pole
-        self.cc_a = np.zeros((max_poles, max_rc_order, nx, ny), dtype=np.float64)
-        self.cc_b = np.zeros((max_poles, max_rc_order, nx, ny), dtype=np.float64)
-        self.cc_psi_ez = np.zeros((max_poles, max_rc_order, nx, ny), dtype=np.float64)
-        self.cc_psi_ex = np.zeros((max_poles, max_rc_order, nx, ny), dtype=np.float64)
-        self.cc_psi_ey = np.zeros((max_poles, max_rc_order, nx, ny), dtype=np.float64)
+        self.cc_a = xpb.zeros((max_poles, max_rc_order, nx, ny))
+        self.cc_b = xpb.zeros((max_poles, max_rc_order, nx, ny))
+        self.cc_psi_ez = xpb.zeros((max_poles, max_rc_order, nx, ny))
+        self.cc_psi_ex = xpb.zeros((max_poles, max_rc_order, nx, ny))
+        self.cc_psi_ey = xpb.zeros((max_poles, max_rc_order, nx, ny))
 
         # Polarization current arrays (J_p) for each E-field component
-        self.j_ez = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.j_ex = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.j_ey = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.j_ez = xpb.zeros((max_poles, nx, ny))
+        self.j_ex = xpb.zeros((max_poles, nx, ny))
+        self.j_ey = xpb.zeros((max_poles, nx, ny))
 
         # Previous-step J for Lorentz (2nd-order)
-        self.j_ez_prev = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.j_ex_prev = np.zeros((max_poles, nx, ny), dtype=np.float64)
-        self.j_ey_prev = np.zeros((max_poles, nx, ny), dtype=np.float64)
+        self.j_ez_prev = xpb.zeros((max_poles, nx, ny))
+        self.j_ex_prev = xpb.zeros((max_poles, nx, ny))
+        self.j_ey_prev = xpb.zeros((max_poles, nx, ny))
 
         self.active_poles = 0
 
@@ -238,13 +239,13 @@ class DispersiveManager:
             
     def compute_coefficients(self, dt: float) -> npt.NDArray[np.float64]:
         """Precompute ADE update coefficients and return effective permittivity.
-        
+
         Returns
         -------
         eps_eff_add : ndarray of shape (nx, ny)
             Effective permittivity addition to be added to ε_∞·ε₀.
         """
-        eps_eff_add = np.zeros((self.nx, self.ny), dtype=np.float64)
+        eps_eff_add = xpb.zeros((self.nx, self.ny))
         
         for p in range(self.active_poles):
             ptype = self.pole_types[p]
@@ -351,10 +352,11 @@ class DispersiveManager:
             The summation term to be subtracted in the E-field update.
         """
         if self.active_poles == 0:
-            return np.zeros((self.nx, self.ny), dtype=np.float64)
-            
+            return xpb.zeros((self.nx, self.ny))
+
+        xp = xpb.get_backend_module()
         j_array = getattr(self, f"j_{component.lower()}")
-        return np.sum(
+        return xp.sum(
             self.gamma[:self.active_poles] * j_array[:self.active_poles],
             axis=0,
         )
@@ -405,7 +407,7 @@ class DispersiveManager:
                 # Cole-Cole: sum of recursive convolution terms
                 # Each term: ψ_m^{n+1} = a_m·ψ_m^n + b_m·E^{n+1}
                 # J = Σ ψ_m
-                j_total = np.zeros_like(e_new)
+                j_total = xpb.zeros_like(e_new)
 
                 if component == 'Ez':
                     psi_array = self.cc_psi_ez
