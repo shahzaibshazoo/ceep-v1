@@ -38,9 +38,14 @@ WAVELENGTH = 3e8 / FREQUENCY
 NUM_ELEMENTS = 16
 DX = WAVELENGTH / 15
 NX = NY = 2000
-TOTAL_STEPS = 1000
 GROUND_TRUTH_ANGLE = 30.0
 TARGET_RANGE = 2.5  # meters
+
+# Calculate required timesteps for target range
+dt_cfl = 0.99 * DX / (3e8 * np.sqrt(2))
+round_trip_time = 2 * TARGET_RANGE / 3e8
+required_steps = int(round_trip_time / dt_cfl) + 500  # +500 for margin
+TOTAL_STEPS = max(1000, required_steps)  # At least 1000 steps
 
 print(f"Frequency: {FREQUENCY/1e9:.1f} GHz")
 print(f"Wavelength: {WAVELENGTH*100:.2f} cm")
@@ -113,6 +118,14 @@ reflection_sample = int(round_trip_time / solver.dt)
 window_width = 100  # samples around reflection
 sample_start = max(0, reflection_sample - window_width)
 sample_end = min(TOTAL_STEPS, reflection_sample + window_width)
+
+# Safety check
+if sample_end <= sample_start:
+    print(f"\n⚠️  ERROR: Reflection arrives after simulation ends!")
+    print(f"  Reflection at sample {reflection_sample}, but only {TOTAL_STEPS} steps simulated")
+    print(f"  Need at least {reflection_sample + 200} timesteps")
+    print(f"  Aborting analysis...\n")
+    exit(1)
 
 print(f"  Round-trip time: {round_trip_time*1e9:.1f} ns")
 print(f"  Time step: {solver.dt*1e12:.2f} ps")
