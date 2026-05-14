@@ -41,6 +41,7 @@ import numpy.typing as npt
 from neurowave.core.base import BaseBoundary
 from neurowave.core.config import SimulationConfig, SimulationMode
 from neurowave.core.constants import C_0, EPS_0, MU_0
+from neurowave.core import backend as xpb
 
 
 @dataclass
@@ -116,10 +117,10 @@ class MurABC(BaseBoundary):
     def _initialize(self, config: SimulationConfig) -> None:
         """Allocate storage for previous boundary values."""
         nx, ny = config.grid.nx, config.grid.ny
-        self._prev_x0 = np.zeros(ny, dtype=np.float64)
-        self._prev_xn = np.zeros(ny, dtype=np.float64)
-        self._prev_y0 = np.zeros(nx, dtype=np.float64)
-        self._prev_yn = np.zeros(nx, dtype=np.float64)
+        self._prev_x0 = xpb.zeros((ny,))
+        self._prev_xn = xpb.zeros((ny,))
+        self._prev_y0 = xpb.zeros((nx,))
+        self._prev_yn = xpb.zeros((nx,))
         self._initialized = True
 
     def apply_e_field(self, e_fields, h_fields, config):
@@ -255,6 +256,11 @@ class CPML(BaseBoundary):
     _ce_y: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
     _bh_y: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
     _ch_y: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
+    _be_z: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
+    _ce_z: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
+    _bh_z: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
+    _ch_z: Optional[npt.NDArray] = field(init=False, default=None, repr=False)
+    _dt_3d: Optional[float] = field(init=False, default=None, repr=False)  # Store dt for 3D updates
     _initialized: bool = field(init=False, default=False)
 
     def _compute_pml_params(
@@ -287,6 +293,7 @@ class CPML(BaseBoundary):
         alpha_h = self.alpha_max * (1.0 - rho_h)
 
         # CPML coefficients: b = exp(-(σ/κ + α)·Δt/ε₀)
+        # Note: dt is already passed in as parameter
         be = np.exp(-(sigma_e / kappa_e + alpha_e) * dt / EPS_0)
         ce = np.where(
             np.abs(sigma_e) < 1e-20,
@@ -317,29 +324,29 @@ class CPML(BaseBoundary):
             t, config.grid.dy, dt
         )
 
-        # Allocate ψ arrays for each PML region
+        # Allocate ψ arrays for each PML region (backend-aware: GPU if cupy active)
         # x-low and x-high PML regions: thickness × ny
-        self._psi_ezx_xlo = np.zeros((t, ny), dtype=np.float64)
-        self._psi_ezx_xhi = np.zeros((t, ny), dtype=np.float64)
-        self._psi_hyx_xlo = np.zeros((t, ny), dtype=np.float64)
-        self._psi_hyx_xhi = np.zeros((t, ny), dtype=np.float64)
+        self._psi_ezx_xlo = xpb.zeros((t, ny))
+        self._psi_ezx_xhi = xpb.zeros((t, ny))
+        self._psi_hyx_xlo = xpb.zeros((t, ny))
+        self._psi_hyx_xhi = xpb.zeros((t, ny))
 
         # y-low and y-high PML regions: nx × thickness
-        self._psi_ezy_ylo = np.zeros((nx, t), dtype=np.float64)
-        self._psi_ezy_yhi = np.zeros((nx, t), dtype=np.float64)
-        self._psi_hxy_ylo = np.zeros((nx, t), dtype=np.float64)
-        self._psi_hxy_yhi = np.zeros((nx, t), dtype=np.float64)
+        self._psi_ezy_ylo = xpb.zeros((nx, t))
+        self._psi_ezy_yhi = xpb.zeros((nx, t))
+        self._psi_hxy_ylo = xpb.zeros((nx, t))
+        self._psi_hxy_yhi = xpb.zeros((nx, t))
 
         # TEz psi arrays
-        self._psi_hzx_xlo = np.zeros((t, ny), dtype=np.float64)
-        self._psi_hzx_xhi = np.zeros((t, ny), dtype=np.float64)
-        self._psi_eyx_xlo = np.zeros((t, ny), dtype=np.float64)
-        self._psi_eyx_xhi = np.zeros((t, ny), dtype=np.float64)
+        self._psi_hzx_xlo = xpb.zeros((t, ny))
+        self._psi_hzx_xhi = xpb.zeros((t, ny))
+        self._psi_eyx_xlo = xpb.zeros((t, ny))
+        self._psi_eyx_xhi = xpb.zeros((t, ny))
 
-        self._psi_hzy_ylo = np.zeros((nx, t), dtype=np.float64)
-        self._psi_hzy_yhi = np.zeros((nx, t), dtype=np.float64)
-        self._psi_exy_ylo = np.zeros((nx, t), dtype=np.float64)
-        self._psi_exy_yhi = np.zeros((nx, t), dtype=np.float64)
+        self._psi_hzy_ylo = xpb.zeros((nx, t))
+        self._psi_hzy_yhi = xpb.zeros((nx, t))
+        self._psi_exy_ylo = xpb.zeros((nx, t))
+        self._psi_exy_yhi = xpb.zeros((nx, t))
 
         self._initialized = True
 
@@ -359,7 +366,7 @@ class CPML(BaseBoundary):
             ey = e_fields["Ey"]
 
             # X-direction PML for Hz (∂Ey/∂x term) -> hz -= dt/mu * dEy/dx
-            for i in range(t):
+            for i in range(min(t, nx - 1)):
                 idx = t - 1 - i
                 self._psi_hzx_xlo[i, :] = (
                     self._bh_x[idx] * self._psi_hzx_xlo[i, :]
@@ -367,10 +374,10 @@ class CPML(BaseBoundary):
                 )
                 hz[i, :] -= dt / MU_0 * self._psi_hzx_xlo[i, :]
 
-            for i in range(t):
+            for i in range(min(t, nx - 1)):
                 idx = i
                 gi = nx - t + i
-                if gi < nx - 1:
+                if gi >= 0 and gi < nx - 1:
                     self._psi_hzx_xhi[i, :] = (
                         self._bh_x[idx] * self._psi_hzx_xhi[i, :]
                         + self._ch_x[idx] * (ey[gi + 1, :] - ey[gi, :]) / dx
@@ -378,7 +385,7 @@ class CPML(BaseBoundary):
                     hz[gi, :] -= dt / MU_0 * self._psi_hzx_xhi[i, :]
 
             # Y-direction PML for Hz (∂Ex/∂y term) -> hz += dt/mu * dEx/dy
-            for j in range(t):
+            for j in range(min(t, ny - 1)):
                 idx = t - 1 - j
                 self._psi_hzy_ylo[:, j] = (
                     self._bh_y[idx] * self._psi_hzy_ylo[:, j]
@@ -386,10 +393,10 @@ class CPML(BaseBoundary):
                 )
                 hz[:, j] += dt / MU_0 * self._psi_hzy_ylo[:, j]
 
-            for j in range(t):
+            for j in range(min(t, ny - 1)):
                 idx = j
                 gj = ny - t + j
-                if gj < ny - 1:
+                if gj >= 0 and gj < ny - 1:
                     self._psi_hzy_yhi[:, j] = (
                         self._bh_y[idx] * self._psi_hzy_yhi[:, j]
                         + self._ch_y[idx] * (ex[:, gj + 1] - ex[:, gj]) / dy
@@ -406,7 +413,7 @@ class CPML(BaseBoundary):
 
         # --- X-direction PML for Hy ---
         # x-low PML (indices 0..t-1)
-        for i in range(t):
+        for i in range(min(t, nx - 1)):
             idx = t - 1 - i  # PML depth index (0=deepest, t-1=interface)
             self._psi_hyx_xlo[i, :] = (
                 self._bh_x[idx] * self._psi_hyx_xlo[i, :]
@@ -415,10 +422,10 @@ class CPML(BaseBoundary):
             hy[i, :] += dt / MU_0 * self._psi_hyx_xlo[i, :]
 
         # x-high PML (indices nx-t..nx-1)
-        for i in range(t):
+        for i in range(min(t, nx - 1)):
             idx = i  # PML depth index
             gi = nx - t + i
-            if gi < nx - 1:
+            if gi >= 0 and gi < nx - 1:
                 self._psi_hyx_xhi[i, :] = (
                     self._bh_x[idx] * self._psi_hyx_xhi[i, :]
                     + self._ch_x[idx] * (ez[gi + 1, :] - ez[gi, :]) / dx
@@ -427,7 +434,7 @@ class CPML(BaseBoundary):
 
         # --- Y-direction PML for Hx ---
         # y-low PML
-        for j in range(t):
+        for j in range(min(t, ny - 1)):
             idx = t - 1 - j
             self._psi_hxy_ylo[:, j] = (
                 self._bh_y[idx] * self._psi_hxy_ylo[:, j]
@@ -436,10 +443,10 @@ class CPML(BaseBoundary):
             hx[:, j] -= dt / MU_0 * self._psi_hxy_ylo[:, j]
 
         # y-high PML
-        for j in range(t):
+        for j in range(min(t, ny - 1)):
             idx = j
             gj = ny - t + j
-            if gj < ny - 1:
+            if gj >= 0 and gj < ny - 1:
                 self._psi_hxy_yhi[:, j] = (
                     self._bh_y[idx] * self._psi_hxy_yhi[:, j]
                     + self._ch_y[idx] * (ez[:, gj + 1] - ez[:, gj]) / dy
@@ -462,42 +469,44 @@ class CPML(BaseBoundary):
             ey = e_fields["Ey"]
 
             # Y-direction PML for Ex (∂Hz/∂y term) -> ex += dt/eps * dHz/dy
-            for j in range(t):
+            for j in range(min(t, ny)):
                 idx = t - 1 - j
-                if j > 0:
+                if j > 0 and j < ny:
                     self._psi_exy_ylo[:, j] = (
                         self._be_y[idx] * self._psi_exy_ylo[:, j]
                         + self._ce_y[idx] * (hz[:, j] - hz[:, j - 1]) / dy
                     )
                     ex[:, j] += dt / EPS_0 * self._psi_exy_ylo[:, j]
 
-            for j in range(t):
+            for j in range(min(t, ny)):
                 idx = j
                 gj = ny - t + j
-                self._psi_exy_yhi[:, j] = (
-                    self._be_y[idx] * self._psi_exy_yhi[:, j]
-                    + self._ce_y[idx] * (hz[:, gj] - hz[:, gj - 1]) / dy
-                )
-                ex[:, gj] += dt / EPS_0 * self._psi_exy_yhi[:, j]
+                if gj > 0 and gj < ny:
+                    self._psi_exy_yhi[:, j] = (
+                        self._be_y[idx] * self._psi_exy_yhi[:, j]
+                        + self._ce_y[idx] * (hz[:, gj] - hz[:, gj - 1]) / dy
+                    )
+                    ex[:, gj] += dt / EPS_0 * self._psi_exy_yhi[:, j]
 
             # X-direction PML for Ey (∂Hz/∂x term) -> ey -= dt/eps * dHz/dx
-            for i in range(t):
+            for i in range(min(t, nx)):
                 idx = t - 1 - i
-                if i > 0:
+                if i > 0 and i < nx:
                     self._psi_eyx_xlo[i, :] = (
                         self._be_x[idx] * self._psi_eyx_xlo[i, :]
                         + self._ce_x[idx] * (hz[i, :] - hz[i - 1, :]) / dx
                     )
                     ey[i, :] -= dt / EPS_0 * self._psi_eyx_xlo[i, :]
 
-            for i in range(t):
+            for i in range(min(t, nx)):
                 idx = i
                 gi = nx - t + i
-                self._psi_eyx_xhi[i, :] = (
-                    self._be_x[idx] * self._psi_eyx_xhi[i, :]
-                    + self._ce_x[idx] * (hz[gi, :] - hz[gi - 1, :]) / dx
-                )
-                ey[gi, :] -= dt / EPS_0 * self._psi_eyx_xhi[i, :]
+                if gi > 0 and gi < nx:
+                    self._psi_eyx_xhi[i, :] = (
+                        self._be_x[idx] * self._psi_eyx_xhi[i, :]
+                        + self._ce_x[idx] * (hz[gi, :] - hz[gi - 1, :]) / dx
+                    )
+                    ey[gi, :] -= dt / EPS_0 * self._psi_eyx_xhi[i, :]
             return
 
         if config.mode != SimulationMode.TMZ:
@@ -509,9 +518,9 @@ class CPML(BaseBoundary):
 
         # --- X-direction PML for Ez (∂Hy/∂x term) ---
         # x-low PML
-        for i in range(t):
+        for i in range(min(t, nx)):
             idx = t - 1 - i
-            if i > 0:
+            if i > 0 and i < nx:
                 self._psi_ezx_xlo[i, :] = (
                     self._be_x[idx] * self._psi_ezx_xlo[i, :]
                     + self._ce_x[idx] * (hy[i, :] - hy[i - 1, :]) / dx
@@ -519,20 +528,21 @@ class CPML(BaseBoundary):
                 ez[i, :] += dt / EPS_0 * self._psi_ezx_xlo[i, :]
 
         # x-high PML
-        for i in range(t):
+        for i in range(min(t, nx)):
             idx = i
             gi = nx - t + i
-            self._psi_ezx_xhi[i, :] = (
-                self._be_x[idx] * self._psi_ezx_xhi[i, :]
-                + self._ce_x[idx] * (hy[gi, :] - hy[gi - 1, :]) / dx
-            )
-            ez[gi, :] += dt / EPS_0 * self._psi_ezx_xhi[i, :]
+            if gi > 0 and gi < nx:
+                self._psi_ezx_xhi[i, :] = (
+                    self._be_x[idx] * self._psi_ezx_xhi[i, :]
+                    + self._ce_x[idx] * (hy[gi, :] - hy[gi - 1, :]) / dx
+                )
+                ez[gi, :] += dt / EPS_0 * self._psi_ezx_xhi[i, :]
 
         # --- Y-direction PML for Ez (∂Hx/∂y term) ---
         # y-low PML
-        for j in range(t):
+        for j in range(min(t, ny)):
             idx = t - 1 - j
-            if j > 0:
+            if j > 0 and j < ny:
                 self._psi_ezy_ylo[:, j] = (
                     self._be_y[idx] * self._psi_ezy_ylo[:, j]
                     + self._ce_y[idx] * (hx[:, j] - hx[:, j - 1]) / dy
@@ -540,11 +550,394 @@ class CPML(BaseBoundary):
                 ez[:, j] -= dt / EPS_0 * self._psi_ezy_ylo[:, j]
 
         # y-high PML
-        for j in range(t):
+        for j in range(min(t, ny)):
             idx = j
             gj = ny - t + j
-            self._psi_ezy_yhi[:, j] = (
-                self._be_y[idx] * self._psi_ezy_yhi[:, j]
-                + self._ce_y[idx] * (hx[:, gj] - hx[:, gj - 1]) / dy
+            if gj > 0 and gj < ny:
+                self._psi_ezy_yhi[:, j] = (
+                    self._be_y[idx] * self._psi_ezy_yhi[:, j]
+                    + self._ce_y[idx] * (hx[:, gj] - hx[:, gj - 1]) / dy
+                )
+                ez[:, gj] -= dt / EPS_0 * self._psi_ezy_yhi[:, j]
+
+    # ========================================================================
+    # 3D CPML METHODS
+    # ========================================================================
+
+    def initialize_3d(self, grid, dt: float):
+        """Initialize CPML for 3D simulation.
+
+        Parameters
+        ----------
+        grid : Grid3D
+            3D FDTD grid.
+        dt : float
+            Timestep size.
+        """
+        nx, ny, nz = grid.nx, grid.ny, grid.nz
+        dx, dy, dz = grid.dx, grid.dy, grid.dz
+        t = self.thickness
+
+        # Store dt for 3D updates
+        self._dt_3d = dt
+
+        # Compute CFS-PML parameters for each direction
+        self._be_x, self._ce_x, self._bh_x, self._ch_x = self._compute_pml_params(t, dx, dt)
+        self._be_y, self._ce_y, self._bh_y, self._ch_y = self._compute_pml_params(t, dy, dt)
+        self._be_z, self._ce_z, self._bh_z, self._ch_z = self._compute_pml_params(t, dz, dt)
+
+        # Allocate 3D auxiliary arrays (backend-aware: GPU if cupy active)
+
+        # Psi arrays for Ex (affected by ∂Hz/∂y and ∂Hy/∂z)
+        self._psi_exy_ylo_3d = xpb.zeros((nx, t, nz))
+        self._psi_exy_yhi_3d = xpb.zeros((nx, t, nz))
+        self._psi_exz_zlo_3d = xpb.zeros((nx, ny, t))
+        self._psi_exz_zhi_3d = xpb.zeros((nx, ny, t))
+
+        # Psi arrays for Ey (affected by ∂Hx/∂z and ∂Hz/∂x)
+        self._psi_eyx_xlo_3d = xpb.zeros((t, ny, nz))
+        self._psi_eyx_xhi_3d = xpb.zeros((t, ny, nz))
+        self._psi_eyz_zlo_3d = xpb.zeros((nx, ny, t))
+        self._psi_eyz_zhi_3d = xpb.zeros((nx, ny, t))
+
+        # Psi arrays for Ez (affected by ∂Hy/∂x and ∂Hx/∂y)
+        self._psi_ezx_xlo_3d = xpb.zeros((t, ny, nz))
+        self._psi_ezx_xhi_3d = xpb.zeros((t, ny, nz))
+        self._psi_ezy_ylo_3d = xpb.zeros((nx, t, nz))
+        self._psi_ezy_yhi_3d = xpb.zeros((nx, t, nz))
+
+        # Psi arrays for Hx (affected by ∂Ez/∂y and ∂Ey/∂z)
+        self._psi_hxy_ylo_3d = xpb.zeros((nx, t, nz))
+        self._psi_hxy_yhi_3d = xpb.zeros((nx, t, nz))
+        self._psi_hxz_zlo_3d = xpb.zeros((nx, ny, t))
+        self._psi_hxz_zhi_3d = xpb.zeros((nx, ny, t))
+
+        # Psi arrays for Hy (affected by ∂Ex/∂z and ∂Ez/∂x)
+        self._psi_hyx_xlo_3d = xpb.zeros((t, ny, nz))
+        self._psi_hyx_xhi_3d = xpb.zeros((t, ny, nz))
+        self._psi_hyz_zlo_3d = xpb.zeros((nx, ny, t))
+        self._psi_hyz_zhi_3d = xpb.zeros((nx, ny, t))
+
+        # Psi arrays for Hz (affected by ∂Ey/∂x and ∂Ex/∂y)
+        self._psi_hzx_xlo_3d = xpb.zeros((t, ny, nz))
+        self._psi_hzx_xhi_3d = xpb.zeros((t, ny, nz))
+        self._psi_hzy_ylo_3d = xpb.zeros((nx, t, nz))
+        self._psi_hzy_yhi_3d = xpb.zeros((nx, t, nz))
+
+    def apply_h_3d(self, grid):
+        """Apply 3D CPML to H-field update.
+
+        Uses FORWARD differences matching the main solver stencils.
+        Restricts corrections to the same index ranges the main loop updates:
+          Hx: [:, 0..ny-2, 0..nz-2]
+          Hy: [0..nx-2, :, 0..nz-2]
+          Hz: [0..nx-2, 0..ny-2, :]
+
+        Parameters
+        ----------
+        grid : Grid3D
+            3D FDTD grid with H-fields just updated.
+        """
+        nx, ny, nz = grid.nx, grid.ny, grid.nz
+        dx, dy, dz = grid.dx, grid.dy, grid.dz
+        dt = self._dt_3d
+        t = self.thickness
+
+        # ================================================================
+        # Hx: main updates [:, :-1, :-1] => y=0..ny-2, z=0..nz-2
+        # dEz/dy term (y-PML): restrict to z=0..nz-2
+        # dEy/dz term (z-PML): restrict to y=0..ny-2
+        # ================================================================
+
+        # Y-low PML for Hx (dEz/dy)
+        for j in range(min(t, ny - 1)):
+            idx = t - 1 - j
+            self._psi_hxy_ylo_3d[:, j, :nz-1] = (
+                self._bh_y[idx] * self._psi_hxy_ylo_3d[:, j, :nz-1] +
+                self._ch_y[idx] * (grid.ez[:, j + 1, :nz-1] - grid.ez[:, j, :nz-1]) / dy
             )
-            ez[:, gj] -= dt / EPS_0 * self._psi_ezy_yhi[:, j]
+            grid.hx[:, j, :nz-1] -= dt / MU_0 * self._psi_hxy_ylo_3d[:, j, :nz-1]
+
+        # Y-high PML for Hx (dEz/dy)
+        for j in range(min(t, ny - 1)):
+            idx = j
+            gj = ny - 1 - t + j
+            if 0 <= gj < ny - 1:
+                self._psi_hxy_yhi_3d[:, j, :nz-1] = (
+                    self._bh_y[idx] * self._psi_hxy_yhi_3d[:, j, :nz-1] +
+                    self._ch_y[idx] * (grid.ez[:, gj + 1, :nz-1] - grid.ez[:, gj, :nz-1]) / dy
+                )
+                grid.hx[:, gj, :nz-1] -= dt / MU_0 * self._psi_hxy_yhi_3d[:, j, :nz-1]
+
+        # Z-low PML for Hx (dEy/dz)
+        for k in range(min(t, nz - 1)):
+            idx = t - 1 - k
+            self._psi_hxz_zlo_3d[:, :ny-1, k] = (
+                self._bh_z[idx] * self._psi_hxz_zlo_3d[:, :ny-1, k] +
+                self._ch_z[idx] * (grid.ey[:, :ny-1, k + 1] - grid.ey[:, :ny-1, k]) / dz
+            )
+            grid.hx[:, :ny-1, k] += dt / MU_0 * self._psi_hxz_zlo_3d[:, :ny-1, k]
+
+        # Z-high PML for Hx (dEy/dz)
+        for k in range(min(t, nz - 1)):
+            idx = k
+            gk = nz - 1 - t + k
+            if 0 <= gk < nz - 1:
+                self._psi_hxz_zhi_3d[:, :ny-1, k] = (
+                    self._bh_z[idx] * self._psi_hxz_zhi_3d[:, :ny-1, k] +
+                    self._ch_z[idx] * (grid.ey[:, :ny-1, gk + 1] - grid.ey[:, :ny-1, gk]) / dz
+                )
+                grid.hx[:, :ny-1, gk] += dt / MU_0 * self._psi_hxz_zhi_3d[:, :ny-1, k]
+
+        # ================================================================
+        # Hy: main updates [:-1, :, :-1] => x=0..nx-2, z=0..nz-2
+        # dEx/dz term (z-PML): restrict to x=0..nx-2
+        # dEz/dx term (x-PML): restrict to z=0..nz-2
+        # ================================================================
+
+        # Z-low PML for Hy (dEx/dz)
+        for k in range(min(t, nz - 1)):
+            idx = t - 1 - k
+            self._psi_hyz_zlo_3d[:nx-1, :, k] = (
+                self._bh_z[idx] * self._psi_hyz_zlo_3d[:nx-1, :, k] +
+                self._ch_z[idx] * (grid.ex[:nx-1, :, k + 1] - grid.ex[:nx-1, :, k]) / dz
+            )
+            grid.hy[:nx-1, :, k] -= dt / MU_0 * self._psi_hyz_zlo_3d[:nx-1, :, k]
+
+        # Z-high PML for Hy (dEx/dz)
+        for k in range(min(t, nz - 1)):
+            idx = k
+            gk = nz - 1 - t + k
+            if 0 <= gk < nz - 1:
+                self._psi_hyz_zhi_3d[:nx-1, :, k] = (
+                    self._bh_z[idx] * self._psi_hyz_zhi_3d[:nx-1, :, k] +
+                    self._ch_z[idx] * (grid.ex[:nx-1, :, gk + 1] - grid.ex[:nx-1, :, gk]) / dz
+                )
+                grid.hy[:nx-1, :, gk] -= dt / MU_0 * self._psi_hyz_zhi_3d[:nx-1, :, k]
+
+        # X-low PML for Hy (dEz/dx)
+        for i in range(min(t, nx - 1)):
+            idx = t - 1 - i
+            self._psi_hyx_xlo_3d[i, :, :nz-1] = (
+                self._bh_x[idx] * self._psi_hyx_xlo_3d[i, :, :nz-1] +
+                self._ch_x[idx] * (grid.ez[i + 1, :, :nz-1] - grid.ez[i, :, :nz-1]) / dx
+            )
+            grid.hy[i, :, :nz-1] += dt / MU_0 * self._psi_hyx_xlo_3d[i, :, :nz-1]
+
+        # X-high PML for Hy (dEz/dx)
+        for i in range(min(t, nx - 1)):
+            idx = i
+            gi = nx - 1 - t + i
+            if 0 <= gi < nx - 1:
+                self._psi_hyx_xhi_3d[i, :, :nz-1] = (
+                    self._bh_x[idx] * self._psi_hyx_xhi_3d[i, :, :nz-1] +
+                    self._ch_x[idx] * (grid.ez[gi + 1, :, :nz-1] - grid.ez[gi, :, :nz-1]) / dx
+                )
+                grid.hy[gi, :, :nz-1] += dt / MU_0 * self._psi_hyx_xhi_3d[i, :, :nz-1]
+
+        # ================================================================
+        # Hz: main updates [:-1, :-1, :] => x=0..nx-2, y=0..ny-2
+        # dEy/dx term (x-PML): restrict to y=0..ny-2
+        # dEx/dy term (y-PML): restrict to x=0..nx-2
+        # ================================================================
+
+        # X-low PML for Hz (dEy/dx)
+        for i in range(min(t, nx - 1)):
+            idx = t - 1 - i
+            self._psi_hzx_xlo_3d[i, :ny-1, :] = (
+                self._bh_x[idx] * self._psi_hzx_xlo_3d[i, :ny-1, :] +
+                self._ch_x[idx] * (grid.ey[i + 1, :ny-1, :] - grid.ey[i, :ny-1, :]) / dx
+            )
+            grid.hz[i, :ny-1, :] -= dt / MU_0 * self._psi_hzx_xlo_3d[i, :ny-1, :]
+
+        # X-high PML for Hz (dEy/dx)
+        for i in range(min(t, nx - 1)):
+            idx = i
+            gi = nx - 1 - t + i
+            if 0 <= gi < nx - 1:
+                self._psi_hzx_xhi_3d[i, :ny-1, :] = (
+                    self._bh_x[idx] * self._psi_hzx_xhi_3d[i, :ny-1, :] +
+                    self._ch_x[idx] * (grid.ey[gi + 1, :ny-1, :] - grid.ey[gi, :ny-1, :]) / dx
+                )
+                grid.hz[gi, :ny-1, :] -= dt / MU_0 * self._psi_hzx_xhi_3d[i, :ny-1, :]
+
+        # Y-low PML for Hz (dEx/dy)
+        for j in range(min(t, ny - 1)):
+            idx = t - 1 - j
+            self._psi_hzy_ylo_3d[:nx-1, j, :] = (
+                self._bh_y[idx] * self._psi_hzy_ylo_3d[:nx-1, j, :] +
+                self._ch_y[idx] * (grid.ex[:nx-1, j + 1, :] - grid.ex[:nx-1, j, :]) / dy
+            )
+            grid.hz[:nx-1, j, :] += dt / MU_0 * self._psi_hzy_ylo_3d[:nx-1, j, :]
+
+        # Y-high PML for Hz (dEx/dy)
+        for j in range(min(t, ny - 1)):
+            idx = j
+            gj = ny - 1 - t + j
+            if 0 <= gj < ny - 1:
+                self._psi_hzy_yhi_3d[:nx-1, j, :] = (
+                    self._bh_y[idx] * self._psi_hzy_yhi_3d[:nx-1, j, :] +
+                    self._ch_y[idx] * (grid.ex[:nx-1, gj + 1, :] - grid.ex[:nx-1, gj, :]) / dy
+                )
+                grid.hz[:nx-1, gj, :] += dt / MU_0 * self._psi_hzy_yhi_3d[:nx-1, j, :]
+
+    def apply_e_3d(self, grid):
+        """Apply 3D CPML to E-field update.
+
+        Uses BACKWARD differences matching the main solver stencils.
+        Restricts corrections to the same index ranges the main loop updates:
+          Ex, Ey, Ez: [1:, 1:, 1:] => x=1..nx-1, y=1..ny-1, z=1..nz-1
+
+        Parameters
+        ----------
+        grid : Grid3D
+            3D FDTD grid with E-fields just updated.
+        """
+        nx, ny, nz = grid.nx, grid.ny, grid.nz
+        dx, dy, dz = grid.dx, grid.dy, grid.dz
+        dt = self._dt_3d
+        t = self.thickness
+
+        # ================================================================
+        # Ex: main updates [1:, 1:, 1:] => x=1..nx-1, y=1..ny-1, z=1..nz-1
+        # dHz/dy (y-PML): restrict to x=1..nx-1, z=1..nz-1
+        # dHy/dz (z-PML): restrict to x=1..nx-1, y=1..ny-1
+        # ================================================================
+
+        # Y-low PML for Ex (dHz/dy)
+        for j in range(min(t, ny)):
+            idx = t - 1 - j
+            if j >= 1:
+                self._psi_exy_ylo_3d[1:, j, 1:] = (
+                    self._be_y[idx] * self._psi_exy_ylo_3d[1:, j, 1:] +
+                    self._ce_y[idx] * (grid.hz[1:, j, 1:] - grid.hz[1:, j - 1, 1:]) / dy
+                )
+                grid.ex[1:, j, 1:] += dt / EPS_0 * self._psi_exy_ylo_3d[1:, j, 1:]
+
+        # Y-high PML for Ex (dHz/dy)
+        for j in range(min(t, ny)):
+            idx = j
+            gj = ny - t + j
+            if 1 <= gj < ny:
+                self._psi_exy_yhi_3d[1:, j, 1:] = (
+                    self._be_y[idx] * self._psi_exy_yhi_3d[1:, j, 1:] +
+                    self._ce_y[idx] * (grid.hz[1:, gj, 1:] - grid.hz[1:, gj - 1, 1:]) / dy
+                )
+                grid.ex[1:, gj, 1:] += dt / EPS_0 * self._psi_exy_yhi_3d[1:, j, 1:]
+
+        # Z-low PML for Ex (dHy/dz)
+        for k in range(min(t, nz)):
+            idx = t - 1 - k
+            if k >= 1:
+                self._psi_exz_zlo_3d[1:, 1:, k] = (
+                    self._be_z[idx] * self._psi_exz_zlo_3d[1:, 1:, k] +
+                    self._ce_z[idx] * (grid.hy[1:, 1:, k] - grid.hy[1:, 1:, k - 1]) / dz
+                )
+                grid.ex[1:, 1:, k] -= dt / EPS_0 * self._psi_exz_zlo_3d[1:, 1:, k]
+
+        # Z-high PML for Ex (dHy/dz)
+        for k in range(min(t, nz)):
+            idx = k
+            gk = nz - t + k
+            if 1 <= gk < nz:
+                self._psi_exz_zhi_3d[1:, 1:, k] = (
+                    self._be_z[idx] * self._psi_exz_zhi_3d[1:, 1:, k] +
+                    self._ce_z[idx] * (grid.hy[1:, 1:, gk] - grid.hy[1:, 1:, gk - 1]) / dz
+                )
+                grid.ex[1:, 1:, gk] -= dt / EPS_0 * self._psi_exz_zhi_3d[1:, 1:, k]
+
+        # ================================================================
+        # Ey: main updates [1:, 1:, 1:]
+        # dHx/dz (z-PML): restrict to x=1..nx-1, y=1..ny-1
+        # dHz/dx (x-PML): restrict to y=1..ny-1, z=1..nz-1
+        # ================================================================
+
+        # Z-low PML for Ey (dHx/dz)
+        for k in range(min(t, nz)):
+            idx = t - 1 - k
+            if k >= 1:
+                self._psi_eyz_zlo_3d[1:, 1:, k] = (
+                    self._be_z[idx] * self._psi_eyz_zlo_3d[1:, 1:, k] +
+                    self._ce_z[idx] * (grid.hx[1:, 1:, k] - grid.hx[1:, 1:, k - 1]) / dz
+                )
+                grid.ey[1:, 1:, k] += dt / EPS_0 * self._psi_eyz_zlo_3d[1:, 1:, k]
+
+        # Z-high PML for Ey (dHx/dz)
+        for k in range(min(t, nz)):
+            idx = k
+            gk = nz - t + k
+            if 1 <= gk < nz:
+                self._psi_eyz_zhi_3d[1:, 1:, k] = (
+                    self._be_z[idx] * self._psi_eyz_zhi_3d[1:, 1:, k] +
+                    self._ce_z[idx] * (grid.hx[1:, 1:, gk] - grid.hx[1:, 1:, gk - 1]) / dz
+                )
+                grid.ey[1:, 1:, gk] += dt / EPS_0 * self._psi_eyz_zhi_3d[1:, 1:, k]
+
+        # X-low PML for Ey (dHz/dx)
+        for i in range(min(t, nx)):
+            idx = t - 1 - i
+            if i >= 1:
+                self._psi_eyx_xlo_3d[i, 1:, 1:] = (
+                    self._be_x[idx] * self._psi_eyx_xlo_3d[i, 1:, 1:] +
+                    self._ce_x[idx] * (grid.hz[i, 1:, 1:] - grid.hz[i - 1, 1:, 1:]) / dx
+                )
+                grid.ey[i, 1:, 1:] -= dt / EPS_0 * self._psi_eyx_xlo_3d[i, 1:, 1:]
+
+        # X-high PML for Ey (dHz/dx)
+        for i in range(min(t, nx)):
+            idx = i
+            gi = nx - t + i
+            if 1 <= gi < nx:
+                self._psi_eyx_xhi_3d[i, 1:, 1:] = (
+                    self._be_x[idx] * self._psi_eyx_xhi_3d[i, 1:, 1:] +
+                    self._ce_x[idx] * (grid.hz[gi, 1:, 1:] - grid.hz[gi - 1, 1:, 1:]) / dx
+                )
+                grid.ey[gi, 1:, 1:] -= dt / EPS_0 * self._psi_eyx_xhi_3d[i, 1:, 1:]
+
+        # ================================================================
+        # Ez: main updates [1:, 1:, 1:]
+        # dHy/dx (x-PML): restrict to y=1..ny-1, z=1..nz-1
+        # dHx/dy (y-PML): restrict to x=1..nx-1, z=1..nz-1
+        # ================================================================
+
+        # X-low PML for Ez (dHy/dx)
+        for i in range(min(t, nx)):
+            idx = t - 1 - i
+            if i >= 1:
+                self._psi_ezx_xlo_3d[i, 1:, 1:] = (
+                    self._be_x[idx] * self._psi_ezx_xlo_3d[i, 1:, 1:] +
+                    self._ce_x[idx] * (grid.hy[i, 1:, 1:] - grid.hy[i - 1, 1:, 1:]) / dx
+                )
+                grid.ez[i, 1:, 1:] += dt / EPS_0 * self._psi_ezx_xlo_3d[i, 1:, 1:]
+
+        # X-high PML for Ez (dHy/dx)
+        for i in range(min(t, nx)):
+            idx = i
+            gi = nx - t + i
+            if 1 <= gi < nx:
+                self._psi_ezx_xhi_3d[i, 1:, 1:] = (
+                    self._be_x[idx] * self._psi_ezx_xhi_3d[i, 1:, 1:] +
+                    self._ce_x[idx] * (grid.hy[gi, 1:, 1:] - grid.hy[gi - 1, 1:, 1:]) / dx
+                )
+                grid.ez[gi, 1:, 1:] += dt / EPS_0 * self._psi_ezx_xhi_3d[i, 1:, 1:]
+
+        # Y-low PML for Ez (dHx/dy)
+        for j in range(min(t, ny)):
+            idx = t - 1 - j
+            if j >= 1:
+                self._psi_ezy_ylo_3d[1:, j, 1:] = (
+                    self._be_y[idx] * self._psi_ezy_ylo_3d[1:, j, 1:] +
+                    self._ce_y[idx] * (grid.hx[1:, j, 1:] - grid.hx[1:, j - 1, 1:]) / dy
+                )
+                grid.ez[1:, j, 1:] -= dt / EPS_0 * self._psi_ezy_ylo_3d[1:, j, 1:]
+
+        # Y-high PML for Ez (dHx/dy)
+        for j in range(min(t, ny)):
+            idx = j
+            gj = ny - t + j
+            if 1 <= gj < ny:
+                self._psi_ezy_yhi_3d[1:, j, 1:] = (
+                    self._be_y[idx] * self._psi_ezy_yhi_3d[1:, j, 1:] +
+                    self._ce_y[idx] * (grid.hx[1:, gj, 1:] - grid.hx[1:, gj - 1, 1:]) / dy
+                )
+                grid.ez[1:, gj, 1:] -= dt / EPS_0 * self._psi_ezy_yhi_3d[1:, j, 1:]

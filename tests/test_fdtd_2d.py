@@ -430,3 +430,86 @@ class TestDispersiveMaterials:
         
         assert max_disp < max_fs
 
+    def test_drude_medium_attenuates(self):
+        """A wave in a Drude medium (metal) should experience severe attenuation (skin depth)."""
+        from neurowave.materials.dispersive import DrudePole
+        
+        grid = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
+        config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=200)
+        
+        # Free space
+        solver_fs = FDTD2D(config=config, sources=[GaussianSource(x=10, y=5, frequency_max=20e9)])
+        solver_fs.run(200)
+        
+        # Drude metal
+        solver_drude = FDTD2D(config=config, sources=[GaussianSource(x=10, y=5, frequency_max=20e9)])
+        # High plasma frequency, low collision -> highly reflective/attenuative metal
+        pole = DrudePole(omega_p=1e14, gamma=1e12)
+        solver_drude.grid.set_material_region(20, 80, 0, 10, debye_poles=[pole])
+        solver_drude.run(200)
+        
+        ez_fs = solver_fs.get_field("Ez")
+        ez_drude = solver_drude.get_field("Ez")
+        
+        # Wave transmitted into the metal should be near zero (most is reflected)
+        max_fs = np.max(np.abs(ez_fs[25:80, 5]))
+        max_drude = np.max(np.abs(ez_drude[25:80, 5]))
+        
+        assert max_drude < 1e-3 * max_fs  # Massive attenuation
+        
+    def test_lorentz_medium_stability(self):
+        """Test that Lorentz poles do not cause instability."""
+        from neurowave.materials.dispersive import LorentzPole
+        
+        grid = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
+        config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=200)
+        
+        solver = FDTD2D(config=config, sources=[GaussianSource(x=10, y=5, frequency_max=20e9)])
+        pole = LorentzPole(delta_eps=2.0, omega_0=2*np.pi*10e9, delta=1e9)
+        solver.grid.set_material_region(20, 80, 0, 10, debye_poles=[pole])
+        
+        solver.run(200)
+        ez = solver.get_field("Ez")
+        
+        # Should remain stable
+        assert np.all(np.isfinite(ez))
+        assert np.max(np.abs(ez)) < 10.0
+
+
+class TestTFSF:
+    """Tests for Total-Field/Scattered-Field plane wave injection."""
+    
+    def test_plane_wave_scattered_field_is_zero_in_free_space(self):
+        """In free space, fields outside the TF/SF boundary should remain near zero."""
+        from neurowave.sources.plane_wave import PlaneWaveSource
+        
+        grid = GridConfig(nx=100, ny=100, dx=1e-3, dy=1e-3)
+        config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=500)
+        
+        # TF/SF boundary from x=20..80, y=20..80
+        src = PlaneWaveSource(
+            x_start=20, x_end=80,
+            y_start=20, y_end=80,
+            frequency_max=10e9, amplitude=1.0,
+            delay_factor=2.0
+        )
+        
+        solver = FDTD2D(config=config, sources=[src])
+        solver.run(500)
+        
+        ez = solver.get_field("Ez")
+        
+        # Inside TF/SF (total field), wave should be present
+        assert np.max(np.abs(ez[30:70, 30:70])) > 0.05
+        
+        # Outside TF/SF (scattered field), wave should be zero (ideally)
+        # Due to numerical precision, it might not be exactly 0, but very small
+        max_scattered = max(
+            np.max(np.abs(ez[0:15, :])),
+            np.max(np.abs(ez[85:100, :])),
+            np.max(np.abs(ez[:, 0:15])),
+            np.max(np.abs(ez[:, 85:100]))
+        )
+        
+        assert max_scattered < 1e-10
+

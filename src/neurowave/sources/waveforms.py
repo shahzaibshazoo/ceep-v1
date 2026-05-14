@@ -31,6 +31,7 @@ class GaussianSource(BaseSource):
     amplitude: float = 1.0
     delay_factor: float = 6.0
     field_component: str = "Ez"
+    z: int = 0
 
     def __post_init__(self) -> None:
         self._tau: float = 1.0 / (math.pi * self.frequency_max)
@@ -70,6 +71,7 @@ class SinusoidalSource(BaseSource):
     frequency: float
     amplitude: float = 1.0
     field_component: str = "Ez"
+    z: int = 0
 
     def value_at(self, timestep: int, dt: float) -> float:
         t = timestep * dt
@@ -103,6 +105,7 @@ class ModulatedGaussianSource(BaseSource):
     amplitude: float = 1.0
     delay_factor: float = 6.0
     field_component: str = "Ez"
+    z: int = 0
 
     def __post_init__(self) -> None:
         self._tau: float = 1.0 / (math.pi * self.bandwidth)

@@ -50,6 +50,7 @@ import numpy.typing as npt
 
 from neurowave.core.config import GridConfig, SimulationConfig, SimulationMode
 from neurowave.core.constants import EPS_0, MU_0
+from neurowave.core import backend as xpb
 
 
 @dataclass
@@ -125,20 +126,18 @@ class Grid2D:
         ny = self.config.grid.ny
         shape = (nx, ny)
 
-        # Initialize field arrays to zero
+        # Initialize field arrays (backend-aware: GPU if cupy active)
         if self.config.mode == SimulationMode.TMZ:
-            self.ez = np.zeros(shape, dtype=np.float64)
-            self.hx = np.zeros(shape, dtype=np.float64)
-            self.hy = np.zeros(shape, dtype=np.float64)
-            # TEz fields not used but initialized for safety
+            self.ez = xpb.zeros(shape)
+            self.hx = xpb.zeros(shape)
+            self.hy = xpb.zeros(shape)
             self.hz = np.empty(0)
             self.ex = np.empty(0)
             self.ey = np.empty(0)
         elif self.config.mode == SimulationMode.TEZ:
-            self.hz = np.zeros(shape, dtype=np.float64)
-            self.ex = np.zeros(shape, dtype=np.float64)
-            self.ey = np.zeros(shape, dtype=np.float64)
-            # TMz fields not used
+            self.hz = xpb.zeros(shape)
+            self.ex = xpb.zeros(shape)
+            self.ey = xpb.zeros(shape)
             self.ez = np.empty(0)
             self.hx = np.empty(0)
             self.hy = np.empty(0)
@@ -146,11 +145,11 @@ class Grid2D:
             raise ValueError(f"Grid2D does not support mode: {self.config.mode}")
 
         # Material properties — default: free space (ε_r=1, μ_r=1, σ=0)
-        self.eps_r = np.ones(shape, dtype=np.float64)
-        self.eps_inf = np.ones(shape, dtype=np.float64)
-        self.mu_r = np.ones(shape, dtype=np.float64)
-        self.sigma_e = np.zeros(shape, dtype=np.float64)
-        self.sigma_m = np.zeros(shape, dtype=np.float64)
+        self.eps_r = xpb.ones(shape)
+        self.eps_inf = xpb.ones(shape)
+        self.mu_r = xpb.ones(shape)
+        self.sigma_e = xpb.zeros(shape)
+        self.sigma_m = xpb.zeros(shape)
 
         from neurowave.materials.dispersive import DispersiveManager
         self.dispersive = DispersiveManager(nx, ny, max_poles=4)

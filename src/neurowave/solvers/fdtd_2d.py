@@ -35,6 +35,9 @@ import numpy.typing as npt
 from neurowave.core.base import BaseBoundary, BaseSource, BaseSolver
 from neurowave.core.config import SimulationConfig, SimulationMode
 from neurowave.core.grid import Grid2D
+from neurowave.core.backend import to_scalar, to_numpy, is_gpu_active
+from neurowave.solvers.dft import DFTMonitor
+from neurowave.sources.plane_wave import PlaneWaveSource
 
 
 @dataclass
@@ -72,6 +75,7 @@ class FDTD2D(BaseSolver):
     record_field: Optional[str] = None
     record_interval: int = 1
     probe_points: List[Tuple[int, int]] = field(default_factory=list)
+    dft_monitors: List[DFTMonitor] = field(default_factory=list)
 
     # Internal state
     grid: Grid2D = field(init=False, repr=False)
@@ -85,6 +89,10 @@ class FDTD2D(BaseSolver):
 
     def __post_init__(self) -> None:
         """Auto-initialize on creation."""
+        self._use_fused_kernels = False
+        if is_gpu_active():
+            from neurowave.cuda.kernels import cuda_kernels_available
+            self._use_fused_kernels = cuda_kernels_available()
         self.initialize(self.config)
 
     def initialize(self, config: SimulationConfig) -> None:
@@ -96,17 +104,21 @@ class FDTD2D(BaseSolver):
         self.probe_data = {pt: [] for pt in self.probe_points}
 
     def _update_h_fields_tmz(self) -> None:
-        """Update Hx and Hy for TMz mode using vectorized NumPy.
+        """Update Hx and Hy for TMz mode.
 
-        Hx^{n+½}(i,j) = Da(i,j)·Hx^{n-½}(i,j)
-                       - Db(i,j)/Δy · [Ez^n(i,j+1) - Ez^n(i,j)]
-
-        Hy^{n+½}(i,j) = Da(i,j)·Hy^{n-½}(i,j)
-                       + Db(i,j)/Δx · [Ez^n(i+1,j) - Ez^n(i,j)]
-
-        Indexing: Hx uses j to j+1 (y-derivative of Ez)
-                  Hy uses i to i+1 (x-derivative of Ez)
+        Uses fused CUDA kernel when GPU backend is active, otherwise
+        vectorized array operations (works with both NumPy and CuPy).
         """
+        if is_gpu_active() and self._use_fused_kernels:
+            from neurowave.cuda.kernels import launch_update_h_2d_tmz
+            nx, ny = self.config.grid.nx, self.config.grid.ny
+            launch_update_h_2d_tmz(
+                self.grid.hx, self.grid.hy, self.grid.ez,
+                self.grid._da, self.grid._db,
+                nx, ny, self.config.grid.dx, self.config.grid.dy
+            )
+            return
+
         dx = self.config.grid.dx
         dy = self.config.grid.dy
         da = self.grid._da
@@ -125,18 +137,25 @@ class FDTD2D(BaseSolver):
         )
 
     def _update_e_fields_tmz(self) -> None:
-        """Update Ez for TMz mode using vectorized NumPy.
+        """Update Ez for TMz mode.
 
-        Ez^{n+1}(i,j) = Ca(i,j)·Ez^n(i,j) + Cb(i,j) · [
-            (Hy^{n+½}(i,j) - Hy^{n+½}(i-1,j)) / Δx
-          - (Hx^{n+½}(i,j) - Hx^{n+½}(i,j-1)) / Δy
-        ]
+        Uses fused CUDA kernel when GPU backend is active and no dispersive
+        materials are present.
         """
         dx = self.config.grid.dx
         dy = self.config.grid.dy
         ca = self.grid._ca
         cb = self.grid._cb
         disp = self.grid.dispersive.active_poles > 0
+
+        if is_gpu_active() and self._use_fused_kernels and not disp:
+            from neurowave.cuda.kernels import launch_update_e_2d_tmz
+            nx, ny = self.config.grid.nx, self.config.grid.ny
+            launch_update_e_2d_tmz(
+                self.grid.ez, self.grid.hx, self.grid.hy,
+                ca, cb, nx, ny, dx, dy
+            )
+            return
 
         if disp:
             ez_old = self.grid.ez.copy()
@@ -150,7 +169,7 @@ class FDTD2D(BaseSolver):
                 - (self.grid.hx[1:, 1:] - self.grid.hx[1:, :-1]) / dy
             )
         )
-        
+
         if disp:
             self.grid.ez[1:, 1:] -= cb[1:, 1:] * sum_gj[1:, 1:]
             self.grid.dispersive.update_j_fields("Ez", self.grid.ez, ez_old, self.config.dt)
@@ -255,12 +274,16 @@ class FDTD2D(BaseSolver):
         """Record field snapshots and probe data."""
         if self.record_field and self._step % self.record_interval == 0:
             field_arr = self.get_field(self.record_field)
-            self.field_snapshots.append(field_arr.copy())
+            self.field_snapshots.append(to_numpy(field_arr))
 
         for pt in self.probe_points:
             comp = self.record_field or "Ez"
             field_arr = self.get_field(comp)
-            self.probe_data[pt].append(float(field_arr[pt[0], pt[1]]))
+            self.probe_data[pt].append(to_scalar(field_arr[pt[0], pt[1]]))
+
+        for monitor in self.dft_monitors:
+            field_arr = self.get_field(monitor.component)
+            monitor.update(field_arr, self._step, self.config.dt)
 
     def step(self) -> None:
         """Advance simulation by one timestep (leapfrog scheme).
@@ -276,9 +299,11 @@ class FDTD2D(BaseSolver):
         if self.config.mode == SimulationMode.TMZ:
             self._update_h_fields_tmz()
             self._apply_boundaries_h()
+            self._apply_tfsf_h()
             self._update_e_fields_tmz()
             self._inject_sources()
             self._apply_boundaries_e()
+            self._apply_tfsf_e()
         elif self.config.mode == SimulationMode.TEZ:
             self._update_h_fields_tez()
             self._apply_boundaries_h()
@@ -290,6 +315,25 @@ class FDTD2D(BaseSolver):
 
         self._record()
         self._step += 1
+
+    def _apply_tfsf_h(self) -> None:
+        """Apply TF/SF corrections to H-fields for PlaneWaveSources."""
+        for src in self.sources:
+            if isinstance(src, PlaneWaveSource):
+                src.apply_tfsf_h(
+                    self.grid.hx, self.grid.hy,
+                    self.config.grid.dx, self.config.grid.dy,
+                    self.config.dt
+                )
+
+    def _apply_tfsf_e(self) -> None:
+        """Apply TF/SF corrections to E-fields for PlaneWaveSources."""
+        for src in self.sources:
+            if isinstance(src, PlaneWaveSource):
+                src.apply_tfsf_e(
+                    self.grid.ez,
+                    self.config.grid.dx, self.config.dt, self._step
+                )
 
     def run(self, num_steps: Optional[int] = None) -> None:
         """Run simulation for specified number of steps.
