@@ -3,17 +3,36 @@
 # Run this first in Google Colab
 # Make sure you selected GPU runtime: Runtime > Change runtime type > T4 GPU
 
-# Clone private repo — replace YOUR_TOKEN with a GitHub personal access token
+# Option A: Public clone (if repo is public)
+# !git clone https://github.com/shahzaibshazoo/ceep-v1.git
+
+# Option B: Private clone with token
 # Generate token at: https://github.com/settings/tokens (give it 'repo' scope)
-TOKEN = "YOUR_GITHUB_TOKEN_HERE"
+TOKEN = "YOUR_GITHUB_TOKEN_HERE"  # <-- REPLACE THIS
 
+import subprocess
 import os
-os.system(f"git clone https://{TOKEN}@github.com/shahzaibshazoo/ceep-v1.git")
-os.chdir("ceep-v1")
 
-# Install dependencies
-os.system("pip install -e . -q 2>/dev/null || pip install numpy pytest -q")
-os.system("pip install cupy-cuda12x -q")
-os.system("pip install meep -q")
+# Clone
+result = subprocess.run(
+    f"git clone https://{TOKEN}@github.com/shahzaibshazoo/ceep-v1.git",
+    shell=True, capture_output=True, text=True
+)
 
-print("\n✅ Setup complete!")
+if result.returncode != 0:
+    print("ERROR: Clone failed!")
+    print(result.stderr)
+    print("\nTroubleshooting:")
+    print("1. Make sure you replaced YOUR_GITHUB_TOKEN_HERE with your actual token")
+    print("2. Generate token at: https://github.com/settings/tokens")
+    print("3. Give it 'repo' scope")
+    print("4. Make sure the repo exists: github.com/shahzaibshazoo/ceep-v1")
+else:
+    os.chdir("ceep-v1")
+    print("Cloned successfully!")
+
+    # Install dependencies
+    os.system("pip install -e . -q 2>&1 | tail -3")
+    os.system("pip install cupy-cuda12x -q 2>&1 | tail -3")
+    os.system("pip install meep -q 2>&1 | tail -3")
+    print("\nSetup complete! Run the next cells.")
