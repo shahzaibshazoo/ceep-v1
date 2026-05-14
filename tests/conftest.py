@@ -1,7 +1,7 @@
 """Test configuration — ensures backend reset between tests."""
 
 import pytest
-from neurowave.core.backend import set_backend
+from ceep.core.backend import set_backend
 
 
 @pytest.fixture(autouse=True)

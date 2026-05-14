@@ -1,8 +1,8 @@
 import numpy as np
-from neurowave.solvers.dft import DFTMonitor
-from neurowave.core.config import GridConfig, SimulationConfig, SimulationMode
-from neurowave.solvers.fdtd_2d import FDTD2D
-from neurowave.sources.waveforms import SinusoidalSource
+from ceep.solvers.dft import DFTMonitor
+from ceep.core.config import GridConfig, SimulationConfig, SimulationMode
+from ceep.solvers.fdtd_2d import FDTD2D
+from ceep.sources.waveforms import SinusoidalSource
 
 def test_dft_sinusoidal():
     """A sinusoidal source should have a sharp DFT peak at its frequency."""

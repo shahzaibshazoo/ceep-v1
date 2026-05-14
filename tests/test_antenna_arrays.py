@@ -4,7 +4,7 @@ Tests for antenna array configurations.
 
 import numpy as np
 import pytest
-from neurowave.antennas import (
+from ceep.antennas import (
     CircularArray, PlanarArray, ConformalArray,
     create_imaging_array
 )

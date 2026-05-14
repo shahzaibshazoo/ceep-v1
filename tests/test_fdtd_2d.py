@@ -6,14 +6,14 @@ import math
 import pytest
 import numpy as np
 
-from neurowave.core.config import GridConfig, SimulationConfig, SimulationMode
-from neurowave.core.constants import C_0, EPS_0, MU_0
-from neurowave.core.grid import Grid2D
-from neurowave.sources.waveforms import (
+from ceep.core.config import GridConfig, SimulationConfig, SimulationMode
+from ceep.core.constants import C_0, EPS_0, MU_0
+from ceep.core.grid import Grid2D
+from ceep.sources.waveforms import (
     GaussianSource, SinusoidalSource, ModulatedGaussianSource,
 )
-from neurowave.boundaries.absorbing import PEC, MurABC, CPML
-from neurowave.solvers.fdtd_2d import FDTD2D
+from ceep.boundaries.absorbing import PEC, MurABC, CPML
+from ceep.solvers.fdtd_2d import FDTD2D
 
 
 # ============================================================
@@ -392,7 +392,7 @@ class TestDispersiveMaterials:
     
     def test_debye_medium_delays_and_attenuates(self):
         """A wave in a Debye medium should be delayed and attenuated vs free space."""
-        from neurowave.materials.dispersive import DebyePole
+        from ceep.materials.dispersive import DebyePole
         
         # Free space solver
         grid_fs = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
@@ -432,7 +432,7 @@ class TestDispersiveMaterials:
 
     def test_drude_medium_attenuates(self):
         """A wave in a Drude medium (metal) should experience severe attenuation (skin depth)."""
-        from neurowave.materials.dispersive import DrudePole
+        from ceep.materials.dispersive import DrudePole
         
         grid = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
         config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=200)
@@ -459,7 +459,7 @@ class TestDispersiveMaterials:
         
     def test_lorentz_medium_stability(self):
         """Test that Lorentz poles do not cause instability."""
-        from neurowave.materials.dispersive import LorentzPole
+        from ceep.materials.dispersive import LorentzPole
         
         grid = GridConfig(nx=100, ny=10, dx=1e-3, dy=1e-3)
         config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=200)
@@ -481,7 +481,7 @@ class TestTFSF:
     
     def test_plane_wave_scattered_field_is_zero_in_free_space(self):
         """In free space, fields outside the TF/SF boundary should remain near zero."""
-        from neurowave.sources.plane_wave import PlaneWaveSource
+        from ceep.sources.plane_wave import PlaneWaveSource
         
         grid = GridConfig(nx=100, ny=100, dx=1e-3, dy=1e-3)
         config = SimulationConfig(grid=grid, mode=SimulationMode.TMZ, total_steps=500)

@@ -11,9 +11,9 @@ Run with: PYTHONPATH=./src python -m pytest tests/test_gpu.py -v
 import numpy as np
 import pytest
 
-from neurowave.core.backend import is_backend_available, Backend, set_backend
-from neurowave.core.config import GridConfig, SimulationConfig
-from neurowave.sources.waveforms import GaussianSource
+from ceep.core.backend import is_backend_available, Backend, set_backend
+from ceep.core.config import GridConfig, SimulationConfig
+from ceep.sources.waveforms import GaussianSource
 
 HAS_CUPY = is_backend_available(Backend.CUPY)
 pytestmark = pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
@@ -21,8 +21,8 @@ pytestmark = pytest.mark.skipif(not HAS_CUPY, reason="CuPy not available")
 
 def _run_2d_tmz_sim(steps=100):
     """Run a 2D TMz simulation and return final Ez field + probe data."""
-    from neurowave.solvers.fdtd_2d import FDTD2D
-    from neurowave.boundaries.absorbing import CPML
+    from ceep.solvers.fdtd_2d import FDTD2D
+    from ceep.boundaries.absorbing import CPML
 
     grid_config = GridConfig(nx=100, ny=100, dx=1e-3, dy=1e-3)
     config = SimulationConfig(grid=grid_config, total_steps=steps)
@@ -50,7 +50,7 @@ def _run_2d_tmz_sim(steps=100):
 
 def _run_3d_sim(steps=50):
     """Run a 3D simulation and return final Ez field + probe data."""
-    from neurowave.solvers.fdtd_3d import FDTD3D
+    from ceep.solvers.fdtd_3d import FDTD3D
 
     grid_config = GridConfig(nx=30, ny=30, nz=30, dx=1e-3, dy=1e-3, dz=1e-3)
     config = SimulationConfig(grid=grid_config, total_steps=steps)
@@ -74,7 +74,7 @@ class TestGPUValidation:
 
     def test_2d_tmz_cpu_gpu_match(self):
         """2D TMz simulation produces identical results on CPU and GPU."""
-        from neurowave.core.backend import to_numpy
+        from ceep.core.backend import to_numpy
 
         # Run on CPU
         set_backend('numpy')
@@ -93,7 +93,7 @@ class TestGPUValidation:
 
     def test_3d_cpu_gpu_match(self):
         """3D simulation produces identical results on CPU and GPU."""
-        from neurowave.core.backend import to_numpy
+        from ceep.core.backend import to_numpy
 
         # Run on CPU
         set_backend('numpy')
@@ -111,9 +111,9 @@ class TestGPUValidation:
 
     def test_cpml_cpu_gpu_match(self):
         """CPML absorption produces identical results on both backends."""
-        from neurowave.core.backend import to_numpy
-        from neurowave.solvers.fdtd_3d import FDTD3D
-        from neurowave.boundaries.absorbing import CPML
+        from ceep.core.backend import to_numpy
+        from ceep.solvers.fdtd_3d import FDTD3D
+        from ceep.boundaries.absorbing import CPML
 
         def run_cpml_sim():
             grid_config = GridConfig(nx=30, ny=30, nz=30, dx=1e-3, dy=1e-3, dz=1e-3)
@@ -141,7 +141,7 @@ class TestGPUValidation:
     def test_gpu_performance_sanity(self):
         """GPU should not be significantly slower than CPU for medium grids."""
         import time
-        from neurowave.solvers.fdtd_2d import FDTD2D
+        from ceep.solvers.fdtd_2d import FDTD2D
 
         grid_config = GridConfig(nx=200, ny=200, dx=1e-3, dy=1e-3)
         config = SimulationConfig(grid=grid_config, total_steps=100)
@@ -182,7 +182,7 @@ class TestBackendSwitch:
 
     def test_backend_switch_preserves_results(self):
         """Switching backend mid-session produces correct results."""
-        from neurowave.solvers.fdtd_2d import FDTD2D
+        from ceep.solvers.fdtd_2d import FDTD2D
 
         grid_config = GridConfig(nx=50, ny=50, dx=1e-3, dy=1e-3)
         config = SimulationConfig(grid=grid_config, total_steps=20)
@@ -199,7 +199,7 @@ class TestBackendSwitch:
 
         # Switch to GPU and run same sim
         set_backend('cupy')
-        from neurowave.core.backend import to_numpy
+        from ceep.core.backend import to_numpy
         solver = FDTD2D(config=config, sources=[source])
         solver.run()
         gpu_ez = to_numpy(solver.get_field('Ez'))

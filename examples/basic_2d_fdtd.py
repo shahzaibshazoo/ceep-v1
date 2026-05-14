@@ -25,11 +25,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import numpy as np
 
-from neurowave.core.config import GridConfig, SimulationConfig, SimulationMode, Backend
-from neurowave.sources.waveforms import GaussianSource
-from neurowave.boundaries.absorbing import CPML, MurABC
-from neurowave.solvers.fdtd_2d import FDTD2D
-from neurowave.visualization.field_plot import (
+from ceep.core.config import GridConfig, SimulationConfig, SimulationMode, Backend
+from ceep.sources.waveforms import GaussianSource
+from ceep.boundaries.absorbing import CPML, MurABC
+from ceep.solvers.fdtd_2d import FDTD2D
+from ceep.visualization.field_plot import (
     plot_field_2d,
     plot_field_snapshots,
     plot_source_waveform,

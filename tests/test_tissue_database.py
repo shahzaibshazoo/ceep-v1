@@ -4,7 +4,7 @@ Tests for the Gabriel tissue dielectric database.
 
 import numpy as np
 import pytest
-from neurowave.materials.tissue_database import TissueDatabase, plot_tissue_spectrum
+from ceep.materials.tissue_database import TissueDatabase, plot_tissue_spectrum
 
 
 def test_database_initialization():

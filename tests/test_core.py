@@ -11,7 +11,7 @@ Covers:
 import math
 import pytest
 
-from neurowave.core.constants import (
+from ceep.core.constants import (
     C_0,
     EPS_0,
     MU_0,
@@ -21,7 +21,7 @@ from neurowave.core.constants import (
     wavelength_to_frequency,
     frequency_to_wavelength,
 )
-from neurowave.core.config import (
+from ceep.core.config import (
     GridConfig,
     SimulationConfig,
     SimulationMode,

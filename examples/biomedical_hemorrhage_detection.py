@@ -22,17 +22,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-from neurowave.core.config import GridConfig, SimulationConfig, SimulationMode
-from neurowave.core.constants import C_0
-from neurowave.solvers.fdtd_2d import FDTD2D
-from neurowave.solvers.dft import DFTMonitor
-from neurowave.solvers.s_params import MultistaticSParameters, MultistaticDataCollector
-from neurowave.sources.waveforms import ModulatedGaussianSource
-from neurowave.boundaries.absorbing import CPML
-from neurowave.materials.tissue_database import TissueDatabase
-from neurowave.phantoms import SimpleHeadPhantom
-from neurowave.antennas import CircularArray
-from neurowave.imaging import DelayAndSumBeamformer, ImagingRegion
+from ceep.core.config import GridConfig, SimulationConfig, SimulationMode
+from ceep.core.constants import C_0
+from ceep.solvers.fdtd_2d import FDTD2D
+from ceep.solvers.dft import DFTMonitor
+from ceep.solvers.s_params import MultistaticSParameters, MultistaticDataCollector
+from ceep.sources.waveforms import ModulatedGaussianSource
+from ceep.boundaries.absorbing import CPML
+from ceep.materials.tissue_database import TissueDatabase
+from ceep.phantoms import SimpleHeadPhantom
+from ceep.antennas import CircularArray
+from ceep.imaging import DelayAndSumBeamformer, ImagingRegion
 
 
 def main():

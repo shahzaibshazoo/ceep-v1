@@ -3,13 +3,13 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "neurowave"
+name = "ceep"
 version = "0.1.0"
-description = "GPU-Accelerated FDTD Electromagnetic Simulation for Biomedical Microwave Imaging"
+description = "CEEP: CUDA Electromagnetic Exploration Platform - GPU-Accelerated FDTD for Biomedical Imaging"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.9"
-authors = [
+authors = [{name = "Shahzaib Ur Rehman", email = "shahzaibelbert@gmail.com"}]
     {name = "Shahzaib Elbert", email = "shahzaibelbert@gmail.com"},
 ]
 keywords = [
@@ -63,7 +63,7 @@ docs = [
     "mkdocstrings[python]>=0.24",
 ]
 all = [
-    "neurowave[gpu,science,dev,docs]",
+    "ceep[gpu,science,dev,docs]",
 ]
 
 [project.urls]

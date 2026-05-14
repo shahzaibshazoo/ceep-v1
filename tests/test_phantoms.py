@@ -4,7 +4,7 @@ Tests for anatomical phantom models.
 
 import numpy as np
 import pytest
-from neurowave.phantoms import SimpleHeadPhantom, DetailedBrainPhantom, SkinLayerPhantom
+from ceep.phantoms import SimpleHeadPhantom, DetailedBrainPhantom, SkinLayerPhantom
 
 
 def test_simple_head_phantom_creation():

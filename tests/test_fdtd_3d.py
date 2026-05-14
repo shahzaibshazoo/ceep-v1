@@ -4,11 +4,11 @@ Tests for 3D FDTD solver.
 
 import numpy as np
 import pytest
-from neurowave.core.config import GridConfig, SimulationConfig
-from neurowave.solvers.fdtd_3d import FDTD3D
-from neurowave.sources.waveforms import GaussianSource
-from neurowave.boundaries.absorbing import CPML
-from neurowave.core.constants import C_0
+from ceep.core.config import GridConfig, SimulationConfig
+from ceep.solvers.fdtd_3d import FDTD3D
+from ceep.sources.waveforms import GaussianSource
+from ceep.boundaries.absorbing import CPML
+from ceep.core.constants import C_0
 
 
 def test_3d_grid_creation():
