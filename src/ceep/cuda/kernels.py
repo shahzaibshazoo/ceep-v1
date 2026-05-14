@@ -281,21 +281,6 @@ if HAS_CUPY:
     # Need numpy for int32/float64 type coercion in kernel args
     import numpy as np
 
-else:
-    # Stubs when CuPy not available
-    def launch_update_h_2d_tmz(*args, **kwargs):
-        raise RuntimeError("CuPy not available")
-
-    def launch_update_e_2d_tmz(*args, **kwargs):
-        raise RuntimeError("CuPy not available")
-
-    def launch_update_h_3d(*args, **kwargs):
-        raise RuntimeError("CuPy not available")
-
-    def launch_update_e_3d(*args, **kwargs):
-        raise RuntimeError("CuPy not available")
-
-
     # ===========================================================================
     # Batched 2D TMz Kernels (multiple simulations in parallel)
     # ===========================================================================
@@ -469,6 +454,32 @@ else:
              np.int32(batch), np.int32(nx), np.int32(ny),
              np.int32(num_probes), np.int32(step), np.int32(total_steps))
         )
+
+else:
+    # Stubs when CuPy not available
+    def launch_update_h_2d_tmz(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_update_e_2d_tmz(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_update_h_3d(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_update_e_3d(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_batched_h_2d(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_batched_e_2d(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_batched_inject(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
+
+    def launch_batched_record(*args, **kwargs):
+        raise RuntimeError("CuPy not available")
 
 
 def cuda_kernels_available() -> bool:
