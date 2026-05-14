@@ -179,11 +179,14 @@ class Grid2D:
         positive for physical materials (σ ≥ 0, ε > 0), so division is safe.
         """
         dt = self.config.dt
-        
+
         # Add effective permittivity from dispersive materials
         eps_eff_add = self.dispersive.compute_coefficients(dt)
+        # Ensure eps_eff_add is on same device as grid arrays
+        if xpb.is_gpu_active() and isinstance(eps_eff_add, np.ndarray):
+            eps_eff_add = xpb.to_backend(eps_eff_add)
         eps = self.eps_inf * EPS_0 + eps_eff_add
-        
+
         mu = self.mu_r * MU_0
 
         # E-field coefficients

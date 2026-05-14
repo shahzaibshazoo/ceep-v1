@@ -29,6 +29,8 @@ if result.returncode != 0:
     print("4. Make sure the repo exists: github.com/shahzaibshazoo/ceep-v1")
 else:
     os.chdir("ceep-v1")
+    # Clear any stale bytecode cache
+    os.system("find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null")
     print("Cloned successfully!")
 
     # Install dependencies
