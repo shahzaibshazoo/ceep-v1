@@ -198,8 +198,20 @@ class BatchedFDTD2D:
         B = self.batch
 
         # Polynomial grading (order 3)
-        from ceep.core.constants import C_0, EPS_0
-        sigma_max = 0.8 * (3 + 1) / (self.dx * np.sqrt(1.0))
+        from ceep.core.constants import C_0, EPS_0, MU_0
+
+        # Optimal sigma_max (Taflove & Hagness, 3rd ed., equation 7.60a)
+        # sigma_max = -(m+1) * ln(R) / (2 * eta_0 * d_pml)
+        # where R = reflection coefficient (typically 1e-8 to 1e-16)
+        # eta_0 = sqrt(mu_0/eps_0) = impedance of free space ≈ 377 ohms
+        # d_pml = PML thickness in meters
+
+        R = 1e-8  # Target reflection coefficient
+        eta_0 = np.sqrt(MU_0 / EPS_0)  # ~377 ohms
+        d_pml = n * self.dx
+        m = 3  # Polynomial order
+
+        sigma_max = -(m + 1) * np.log(R) / (2.0 * eta_0 * d_pml)
 
         # Grading profile along PML depth
         d = np.arange(n, dtype=np.float64)
