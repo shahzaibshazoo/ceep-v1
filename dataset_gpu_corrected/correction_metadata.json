@@ -1,0 +1,14 @@
+{
+  "correction_factor": 6580000000000.0,
+  "meep_reference_magnitude": 3.368,
+  "ceep_original_magnitude": 5.117e-13,
+  "date_corrected": "2026-05-15",
+  "original_dataset": "dataset_gpu",
+  "n_samples": 100,
+  "statistics": {
+    "original_mean": 5.094299982375882e-13,
+    "original_max": 5.122319386961008e-13,
+    "corrected_mean": 3.3520493884033296,
+    "corrected_max": 3.3704861566203426
+  }
+}
