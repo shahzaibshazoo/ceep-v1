@@ -23,7 +23,13 @@ Date: 2026-05-15
 """
 
 import sys
-sys.path.insert(0, '/content/ceep-v1/src')
+import os
+
+# Add src to path if running from repo directly
+if os.path.exists('src/ceep'):
+    sys.path.insert(0, 'src')
+elif os.path.exists('/content/ceep-v1/src/ceep'):
+    sys.path.insert(0, '/content/ceep-v1/src')
 
 import numpy as np
 import matplotlib.pyplot as plt
