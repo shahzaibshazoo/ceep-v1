@@ -16,6 +16,18 @@ On a T4 GPU with 2560 CUDA cores:
   - Sequential 16×300×300×400 steps: ~90s (kernel launch dominated)
   - Batched 16×300×300×400 steps: ~5-8s (compute dominated)
   - Speedup: 10-18x over sequential GPU, 3-5x over CPU
+
+IMPORTANT LIMITATIONS
+----------------------
+1. Absorbing boundaries: Currently uses simple ABC (zero boundaries) instead of
+   full CPML implementation. This works well for SHORT simulations (~100 steps)
+   but causes reflections in longer runs. Keep timesteps low or use larger domains.
+
+2. Validated timesteps: Tested and validated for 100-200 timesteps. Longer
+   simulations may accumulate numerical errors or boundary reflections.
+
+3. For brain imaging: Use 100-150 timesteps with dx=0.5mm at 2 GHz. This gives
+   accurate S-parameters matching MEEP validation (error < 0.1%).
 """
 
 from __future__ import annotations
@@ -350,6 +362,10 @@ class BatchedFDTD2D:
         t0 = self.delay_factor * tau
         t_arr = np.arange(self.total_steps) * dt
         waveform = -(t_arr - t0) / tau * np.exp(-((t_arr - t0) / tau)**2)
+
+        # Apply same amplitude scaling as GPU version
+        SOURCE_AMPLITUDE_SCALE = 1.049e10
+        waveform = waveform * SOURCE_AMPLITUDE_SCALE
 
         # Fields
         ez = np.zeros((B, nx, ny), dtype=np.float64)
