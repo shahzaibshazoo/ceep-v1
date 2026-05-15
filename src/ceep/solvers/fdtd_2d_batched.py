@@ -304,11 +304,28 @@ class BatchedFDTD2D:
                     )
                 )
 
-            # ABC: zero boundaries
-            self.ez[:, 0, :] = 0
-            self.ez[:, -1, :] = 0
-            self.ez[:, :, 0] = 0
-            self.ez[:, :, -1] = 0
+            # Absorbing boundaries: Exponential damping in PML region
+            # Simple but effective - damps fields exponentially near boundaries
+            n = self.cpml_n
+            for i in range(n):
+                # Damping factor increases toward boundary
+                damp = np.exp(-0.05 * (n - i)**2)
+
+                # Apply to all edges
+                self.ez[:, i, :] *= damp  # Left
+                self.ez[:, -(i+1), :] *= damp  # Right
+                self.ez[:, :, i] *= damp  # Bottom
+                self.ez[:, :, -(i+1)] *= damp  # Top
+
+                self.hx[:, i, :] *= damp
+                self.hx[:, -(i+1), :] *= damp
+                self.hx[:, :, i] *= damp
+                self.hx[:, :, -(i+1)] *= damp
+
+                self.hy[:, i, :] *= damp
+                self.hy[:, -(i+1), :] *= damp
+                self.hy[:, :, i] *= damp
+                self.hy[:, :, -(i+1)] *= damp
 
             # Source injection
             wval = float(self.waveform[step])
