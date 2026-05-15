@@ -247,10 +247,10 @@ class BatchedFDTD2D:
         self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)
 
     def _apply_h_cpml(self):
-        """Apply CPML corrections to H-field after standard update.
+        """Apply CPML H-field updates in PML regions only.
 
-        CRITICAL: The standard update already applied derivatives in PML regions.
-        We need to REPLACE those with CPML psi-based updates, not ADD to them.
+        Standard updates are NOT applied in PML regions - this function
+        handles the complete H-field update using psi variables.
         """
         cp = self.xp
         n = self.cpml_n
@@ -259,23 +259,25 @@ class BatchedFDTD2D:
         # X-direction PML: affects Hy
         # Left boundary
         for i in range(n):
-            dEz_dx = (self.ez[:, i+1, :] - self.ez[:, i, :]) * self.inv_dx
+            if i < nx - 1:
+                dEz_dx = (self.ez[:, i+1, :] - self.ez[:, i, :]) * self.inv_dx
 
-            # Update psi with new derivative
-            self.psi_hxy_lo[:, i, :] = (
-                self.cpml_b_x[i] * self.psi_hxy_lo[:, i, :]
-                + self.cpml_c_x[i] * dEz_dx
-            )
+                # Update psi
+                self.psi_hxy_lo[:, i, :] = (
+                    self.cpml_b_x[i] * self.psi_hxy_lo[:, i, :]
+                    + self.cpml_c_x[i] * dEz_dx
+                )
 
-            # CRITICAL FIX: Remove the standard derivative that was already applied
-            # then apply the CPML psi-based update
-            self.hy[:, i, :] -= self.db[0, i, :] * self.inv_dx * dEz_dx  # Remove standard
-            self.hy[:, i, :] += self.db[0, i, :] * self.psi_hxy_lo[:, i, :]  # Add CPML
+                # Full H-field update using psi (not derivative)
+                self.hy[:, i, :] = (
+                    self.da[0, i, :] * self.hy[:, i, :]
+                    + self.db[0, i, :] * self.psi_hxy_lo[:, i, :]
+                )
 
         # Right boundary
         for i in range(n):
             x_idx = nx - n + i
-            if x_idx + 1 < nx:
+            if x_idx < nx - 1:
                 dEz_dx = (self.ez[:, x_idx+1, :] - self.ez[:, x_idx, :]) * self.inv_dx
 
                 self.psi_hxy_hi[:, i, :] = (
@@ -283,28 +285,33 @@ class BatchedFDTD2D:
                     + self.cpml_c_x[n-1-i] * dEz_dx
                 )
 
-                # Remove standard, add CPML
-                self.hy[:, x_idx, :] -= self.db[0, x_idx, :] * self.inv_dx * dEz_dx
-                self.hy[:, x_idx, :] += self.db[0, x_idx, :] * self.psi_hxy_hi[:, i, :]
+                # Full H-field update using psi
+                self.hy[:, x_idx, :] = (
+                    self.da[0, x_idx, :] * self.hy[:, x_idx, :]
+                    + self.db[0, x_idx, :] * self.psi_hxy_hi[:, i, :]
+                )
 
         # Y-direction PML: affects Hx
         # Bottom boundary
         for j in range(n):
-            dEz_dy = (self.ez[:, :, j+1] - self.ez[:, :, j]) * self.inv_dy
+            if j < ny - 1:
+                dEz_dy = (self.ez[:, :, j+1] - self.ez[:, :, j]) * self.inv_dy
 
-            self.psi_hyx_lo[:, :, j] = (
-                self.cpml_b_y[j] * self.psi_hyx_lo[:, :, j]
-                + self.cpml_c_y[j] * dEz_dy
-            )
+                self.psi_hyx_lo[:, :, j] = (
+                    self.cpml_b_y[j] * self.psi_hyx_lo[:, :, j]
+                    + self.cpml_c_y[j] * dEz_dy
+                )
 
-            # Remove standard, add CPML (note: Hx has minus sign for dy derivative)
-            self.hx[:, :, j] += self.db[0, :, j] * self.inv_dy * dEz_dy  # Remove standard (add because it was subtracted)
-            self.hx[:, :, j] -= self.db[0, :, j] * self.psi_hyx_lo[:, :, j]  # Add CPML
+                # Full H-field update using psi (minus sign for Hx y-derivative)
+                self.hx[:, :, j] = (
+                    self.da[0, :, j] * self.hx[:, :, j]
+                    - self.db[0, :, j] * self.psi_hyx_lo[:, :, j]
+                )
 
         # Top boundary
         for j in range(n):
             y_idx = ny - n + j
-            if y_idx + 1 < ny:
+            if y_idx < ny - 1:
                 dEz_dy = (self.ez[:, :, y_idx+1] - self.ez[:, :, y_idx]) * self.inv_dy
 
                 self.psi_hyx_hi[:, :, j] = (
@@ -312,34 +319,41 @@ class BatchedFDTD2D:
                     + self.cpml_c_y[n-1-j] * dEz_dy
                 )
 
-                # Remove standard, add CPML
-                self.hx[:, :, y_idx] += self.db[0, :, y_idx] * self.inv_dy * dEz_dy
-                self.hx[:, :, y_idx] -= self.db[0, :, y_idx] * self.psi_hyx_hi[:, :, j]
+                # Full H-field update using psi
+                self.hx[:, :, y_idx] = (
+                    self.da[0, :, y_idx] * self.hx[:, :, y_idx]
+                    - self.db[0, :, y_idx] * self.psi_hyx_hi[:, :, j]
+                )
 
     def _apply_e_cpml(self):
-        """Apply CPML corrections to E-field after standard update.
+        """Apply CPML E-field updates in PML regions.
 
-        CRITICAL: The standard update already applied derivatives in PML regions.
-        We need to REPLACE those with CPML psi-based updates, not ADD to them.
+        For E-field, we need psi for BOTH X and Y directions in PML regions.
+        In corner regions, both psi_x and psi_y contribute.
         """
         cp = self.xp
         n = self.cpml_n
         nx, ny = self.nx, self.ny
 
-        # X-direction PML
+        # X-direction PML: affects Ez in left/right strips
         # Left boundary
         for i in range(n):
             if i + 1 < nx:
-                dHy_dx = (self.hy[:, i+1, :] - self.hy[:, i, :]) * self.inv_dx
+                for j in range(1, ny):
+                    dHy_dx = (self.hy[:, i+1, j] - self.hy[:, i, j]) * self.inv_dx
+                    dHx_dy = (self.hx[:, i+1, j] - self.hx[:, i+1, j-1]) * self.inv_dy
 
-                self.psi_ezx_lo[:, i, :] = (
-                    self.cpml_b_x[i] * self.psi_ezx_lo[:, i, :]
-                    + self.cpml_c_x[i] * dHy_dx
-                )
+                    # Update psi_x
+                    self.psi_ezx_lo[:, i, j] = (
+                        self.cpml_b_x[i] * self.psi_ezx_lo[:, i, j]
+                        + self.cpml_c_x[i] * dHy_dx
+                    )
 
-                # Remove standard, add CPML
-                self.ez[:, i+1, :] -= self.cb[0, i+1, :] * self.inv_dx * dHy_dx
-                self.ez[:, i+1, :] += self.cb[0, i+1, :] * self.psi_ezx_lo[:, i, :]
+                    # E-field update: use psi_x for x-deriv, standard for y-deriv
+                    self.ez[:, i+1, j] = (
+                        self.ca[0, i+1, j] * self.ez[:, i+1, j]
+                        + self.cb[0, i+1, j] * (self.psi_ezx_lo[:, i, j] - dHx_dy)
+                    )
 
         # Right boundary
         for i in range(n):
@@ -443,36 +457,38 @@ class BatchedFDTD2D:
                 # ============================================================
                 # H-field update with CPML
                 # ============================================================
-                # Standard update
-                self.hx[:, :, :-1] = (
-                    self.da[:, :, :-1] * self.hx[:, :, :-1]
-                    - self.db[:, :, :-1] * self.inv_dy * (
-                        self.ez[:, :, 1:] - self.ez[:, :, :-1]
+                n = self.cpml_n
+
+                # Interior (non-PML) region: standard FDTD
+                self.hx[:, n:nx-n, n:ny-1] = (
+                    self.da[:, n:nx-n, n:ny-1] * self.hx[:, n:nx-n, n:ny-1]
+                    - self.db[:, n:nx-n, n:ny-1] * self.inv_dy * (
+                        self.ez[:, n:nx-n, n+1:ny] - self.ez[:, n:nx-n, n:ny-1]
                     )
                 )
-                self.hy[:, :-1, :] = (
-                    self.da[:, :-1, :] * self.hy[:, :-1, :]
-                    + self.db[:, :-1, :] * self.inv_dx * (
-                        self.ez[:, 1:, :] - self.ez[:, :-1, :]
+                self.hy[:, n:nx-1, n:ny-n] = (
+                    self.da[:, n:nx-1, n:ny-n] * self.hy[:, n:nx-1, n:ny-n]
+                    + self.db[:, n:nx-1, n:ny-n] * self.inv_dx * (
+                        self.ez[:, n+1:nx, n:ny-n] - self.ez[:, n:nx-1, n:ny-n]
                     )
                 )
 
-                # CPML corrections for H in boundary regions
+                # PML regions: use psi-based updates
                 self._apply_h_cpml()
 
                 # ============================================================
                 # E-field update with CPML
                 # ============================================================
-                # Standard update
-                self.ez[:, 1:, 1:] = (
-                    self.ca[:, 1:, 1:] * self.ez[:, 1:, 1:]
-                    + self.cb[:, 1:, 1:] * (
-                        (self.hy[:, 1:, 1:] - self.hy[:, :-1, 1:]) * self.inv_dx
-                        - (self.hx[:, 1:, 1:] - self.hx[:, 1:, :-1]) * self.inv_dy
+                # Interior (non-PML) region: standard FDTD
+                self.ez[:, n+1:nx-n, n+1:ny-n] = (
+                    self.ca[:, n+1:nx-n, n+1:ny-n] * self.ez[:, n+1:nx-n, n+1:ny-n]
+                    + self.cb[:, n+1:nx-n, n+1:ny-n] * (
+                        (self.hy[:, n+1:nx-n, n+1:ny-n] - self.hy[:, n:nx-n-1, n+1:ny-n]) * self.inv_dx
+                        - (self.hx[:, n+1:nx-n, n+1:ny-n] - self.hx[:, n+1:nx-n, n:ny-n-1]) * self.inv_dy
                     )
                 )
 
-                # CPML corrections for E in boundary regions
+                # PML regions: use psi-based updates
                 self._apply_e_cpml()
 
                 # Zero out corners to avoid artifacts
