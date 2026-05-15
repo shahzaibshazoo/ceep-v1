@@ -150,9 +150,14 @@ def run_ceep(eps_r, sigma_e, name):
         frequency=FREQUENCY
     )
 
-    # Set brain phantom
+    # CRITICAL: Set brain phantom BEFORE building
+    # Material arrays must be set before _build() is called
     solver._eps_r[:] = eps_r
     solver._sigma_e[:] = sigma_e
+
+    # Verify materials were set
+    print(f"  [DEBUG] eps_r range: [{eps_r.min():.1f}, {eps_r.max():.1f}]")
+    print(f"  [DEBUG] sigma_e range: [{sigma_e.min():.2f}, {sigma_e.max():.2f}]")
 
     t_start = time.time()
     s_matrix = solver.run()
@@ -191,7 +196,16 @@ def run_meep(eps_r, sigma_e, name):
 
     try:
         C_0 = 3e8
-        cell_size = mp.vec(NX * DX, NY * DX, 0)
+
+        # Support both old and new MEEP API
+        if hasattr(mp, 'vec'):
+            Vector = mp.vec
+        elif hasattr(mp, 'Vector3'):
+            Vector = mp.Vector3
+        else:
+            raise AttributeError("MEEP has neither vec nor Vector3")
+
+        cell_size = Vector(NX * DX, NY * DX, 0)
         resolution = 1.0 / DX
 
         # Convert antenna positions to MEEP coordinates
@@ -201,7 +215,7 @@ def run_meep(eps_r, sigma_e, name):
                 mp.Source(
                     mp.GaussianSource(frequency=FREQUENCY/C_0, fwidth=FREQUENCY/C_0/5),
                     component=mp.Ez,
-                    center=mp.vec((sx - NX/2) * DX, (sy - NY/2) * DX, 0)
+                    center=Vector((sx - NX/2) * DX, (sy - NY/2) * DX, 0)
                 )
             )
 
@@ -212,7 +226,7 @@ def run_meep(eps_r, sigma_e, name):
         geometry.append(
             mp.Cylinder(
                 radius=20 * DX,
-                center=mp.vec(0, 0, 0),
+                center=Vector(0, 0, 0),
                 material=mp.Medium(epsilon=BRAIN_EPS_R, conductivity=BRAIN_SIGMA)
             )
         )
@@ -229,7 +243,7 @@ def run_meep(eps_r, sigma_e, name):
         )
 
         # Monitor point (first antenna)
-        monitor_point = mp.vec(
+        monitor_point = Vector(
             (antenna_positions[0][0] - NX/2) * DX,
             (antenna_positions[0][1] - NY/2) * DX,
             0
