@@ -229,6 +229,104 @@ class BatchedFDTD2D:
         self.psi_ezy_lo = cp.zeros((B, nx, n), dtype=cp.float64)
         self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)
 
+    def _apply_h_cpml(self):
+        """Apply CPML corrections to H-field after standard update."""
+        cp = self.xp
+        n = self.cpml_n
+        nx, ny = self.nx, self.ny
+
+        # X-direction PML: affects Hy
+        # Left boundary
+        for i in range(n):
+            dEz_dx = (self.ez[:, i+1, :] - self.ez[:, i, :]) * self.inv_dx
+            self.psi_hxy_lo[:, i, :] = (
+                self.cpml_b_x[i] * self.psi_hxy_lo[:, i, :]
+                + self.cpml_c_x[i] * dEz_dx
+            )
+            self.hy[:, i, :] += self.db[0, i, :] * self.psi_hxy_lo[:, i, :]
+
+        # Right boundary
+        for i in range(n):
+            x_idx = nx - n + i
+            if x_idx + 1 < nx:
+                dEz_dx = (self.ez[:, x_idx+1, :] - self.ez[:, x_idx, :]) * self.inv_dx
+                self.psi_hxy_hi[:, i, :] = (
+                    self.cpml_b_x[n-1-i] * self.psi_hxy_hi[:, i, :]
+                    + self.cpml_c_x[n-1-i] * dEz_dx
+                )
+                self.hy[:, x_idx, :] += self.db[0, x_idx, :] * self.psi_hxy_hi[:, i, :]
+
+        # Y-direction PML: affects Hx
+        # Bottom boundary
+        for j in range(n):
+            dEz_dy = (self.ez[:, :, j+1] - self.ez[:, :, j]) * self.inv_dy
+            self.psi_hyx_lo[:, :, j] = (
+                self.cpml_b_y[j] * self.psi_hyx_lo[:, :, j]
+                + self.cpml_c_y[j] * dEz_dy
+            )
+            self.hx[:, :, j] -= self.db[0, :, j] * self.psi_hyx_lo[:, :, j]
+
+        # Top boundary
+        for j in range(n):
+            y_idx = ny - n + j
+            if y_idx + 1 < ny:
+                dEz_dy = (self.ez[:, :, y_idx+1] - self.ez[:, :, y_idx]) * self.inv_dy
+                self.psi_hyx_hi[:, :, j] = (
+                    self.cpml_b_y[n-1-j] * self.psi_hyx_hi[:, :, j]
+                    + self.cpml_c_y[n-1-j] * dEz_dy
+                )
+                self.hx[:, :, y_idx] -= self.db[0, :, y_idx] * self.psi_hyx_hi[:, :, j]
+
+    def _apply_e_cpml(self):
+        """Apply CPML corrections to E-field after standard update."""
+        cp = self.xp
+        n = self.cpml_n
+        nx, ny = self.nx, self.ny
+
+        # X-direction PML
+        # Left boundary
+        for i in range(n):
+            if i + 1 < nx:
+                dHy_dx = (self.hy[:, i+1, :] - self.hy[:, i, :]) * self.inv_dx
+                self.psi_ezx_lo[:, i, :] = (
+                    self.cpml_b_x[i] * self.psi_ezx_lo[:, i, :]
+                    + self.cpml_c_x[i] * dHy_dx
+                )
+                self.ez[:, i+1, :] += self.cb[0, i+1, :] * self.psi_ezx_lo[:, i, :]
+
+        # Right boundary
+        for i in range(n):
+            x_idx = nx - n + i
+            if x_idx > 0:
+                dHy_dx = (self.hy[:, x_idx, :] - self.hy[:, x_idx-1, :]) * self.inv_dx
+                self.psi_ezx_hi[:, i, :] = (
+                    self.cpml_b_x[n-1-i] * self.psi_ezx_hi[:, i, :]
+                    + self.cpml_c_x[n-1-i] * dHy_dx
+                )
+                self.ez[:, x_idx, :] += self.cb[0, x_idx, :] * self.psi_ezx_hi[:, i, :]
+
+        # Y-direction PML
+        # Bottom boundary
+        for j in range(n):
+            if j + 1 < ny:
+                dHx_dy = (self.hx[:, :, j+1] - self.hx[:, :, j]) * self.inv_dy
+                self.psi_ezy_lo[:, :, j] = (
+                    self.cpml_b_y[j] * self.psi_ezy_lo[:, :, j]
+                    + self.cpml_c_y[j] * (-dHx_dy)
+                )
+                self.ez[:, :, j+1] += self.cb[0, :, j+1] * self.psi_ezy_lo[:, :, j]
+
+        # Top boundary
+        for j in range(n):
+            y_idx = ny - n + j
+            if y_idx > 0:
+                dHx_dy = (self.hx[:, :, y_idx] - self.hx[:, :, y_idx-1]) * self.inv_dy
+                self.psi_ezy_hi[:, :, j] = (
+                    self.cpml_b_y[n-1-j] * self.psi_ezy_hi[:, :, j]
+                    + self.cpml_c_y[n-1-j] * (-dHx_dy)
+                )
+                self.ez[:, :, y_idx] += self.cb[0, :, y_idx] * self.psi_ezy_hi[:, :, j]
+
     def run(self) -> Dict[int, Dict[int, np.ndarray]]:
         """Run all batched simulations and return S-matrix data.
 
@@ -283,7 +381,10 @@ class BatchedFDTD2D:
                     ca_flat, cb_flat, B, nx, ny, self.dx, self.dy
                 )
             else:
-                # Fallback: CuPy array slicing (still parallel within each op)
+                # ============================================================
+                # H-field update with CPML
+                # ============================================================
+                # Standard update
                 self.hx[:, :, :-1] = (
                     self.da[:, :, :-1] * self.hx[:, :, :-1]
                     - self.db[:, :, :-1] * self.inv_dy * (
@@ -296,6 +397,14 @@ class BatchedFDTD2D:
                         self.ez[:, 1:, :] - self.ez[:, :-1, :]
                     )
                 )
+
+                # CPML corrections for H in boundary regions
+                self._apply_h_cpml()
+
+                # ============================================================
+                # E-field update with CPML
+                # ============================================================
+                # Standard update
                 self.ez[:, 1:, 1:] = (
                     self.ca[:, 1:, 1:] * self.ez[:, 1:, 1:]
                     + self.cb[:, 1:, 1:] * (
@@ -304,11 +413,14 @@ class BatchedFDTD2D:
                     )
                 )
 
-            # ABC: zero boundaries
-            self.ez[:, 0, :] = 0
-            self.ez[:, -1, :] = 0
-            self.ez[:, :, 0] = 0
-            self.ez[:, :, -1] = 0
+                # CPML corrections for E in boundary regions
+                self._apply_e_cpml()
+
+                # Zero out corners to avoid artifacts
+                self.ez[:, 0, :] = 0
+                self.ez[:, -1, :] = 0
+                self.ez[:, :, 0] = 0
+                self.ez[:, :, -1] = 0
 
             # Source injection
             wval = float(self.waveform[step])
