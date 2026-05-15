@@ -101,3 +101,4 @@ benchmarks/outputs/
 .env.local
 scratch.py
 *.backup
+dataset_gpu (4).zip
