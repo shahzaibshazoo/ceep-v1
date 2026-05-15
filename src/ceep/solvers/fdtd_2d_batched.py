@@ -194,23 +194,10 @@ class BatchedFDTD2D:
         sigma_profile = sigma_max * ((n - 1 - d) / (n - 1))**3
 
         # CPML b and c coefficients
+        # Standard CPML formulation (Taflove & Hagness, 3rd ed.)
         dt = self.dt
         b_profile = np.exp(-sigma_profile * dt / EPS_0)
-        c_profile = np.where(
-            sigma_profile > 0,
-            (b_profile - 1.0) * sigma_profile / (sigma_profile + 1e-30) / sigma_profile,
-            0.0
-        )
-        # Simpler: c = (b - 1) / (dx * kappa * sigma / (sigma + alpha))
-        # For basic CPML: c = (b - 1) * sigma_max / ...
-        # Use standard formulation:
-        c_profile = np.where(
-            sigma_profile > 0,
-            (b_profile - 1.0) / (self.dx * sigma_profile / sigma_profile),
-            0.0
-        )
-        # Actually simplest stable formulation:
-        c_profile = (b_profile - 1.0)
+        c_profile = (b_profile - 1.0)  # Simplified stable formulation
 
         self.cpml_b_x = cp.asarray(b_profile)
         self.cpml_c_x = cp.asarray(c_profile)
