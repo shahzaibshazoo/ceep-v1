@@ -96,6 +96,32 @@ class BatchedFDTD2D:
         self._eps_r[mask] = eps_r
         self._sigma_e[mask] = sigma_e
 
+    def set_phantom(self, phantom) -> None:
+        """Set permittivity from a phantom object.
+
+        Accepts any phantom with a get_eps_map(frequency) or
+        get_permittivity_map(frequency) method, or a BrainPhantom2D.
+        """
+        if hasattr(phantom, 'get_eps_map'):
+            eps_r, sigma_e = phantom.get_eps_map(self.frequency)
+            self._eps_r[:] = eps_r
+            self._sigma_e[:] = sigma_e
+        elif hasattr(phantom, 'get_permittivity_map'):
+            eps_real, eps_imag = phantom.get_permittivity_map(self.frequency)
+            self._eps_r[:] = eps_real
+            omega = 2 * np.pi * self.frequency
+            from ceep.core.constants import EPS_0
+            self._sigma_e[:] = eps_imag * omega * EPS_0
+        elif hasattr(phantom, 'eps_r'):
+            self._eps_r[:] = phantom.eps_r
+            if hasattr(phantom, 'sigma_e'):
+                self._sigma_e[:] = phantom.sigma_e
+        else:
+            raise TypeError(
+                "Phantom must have get_eps_map(), get_permittivity_map(), "
+                "or eps_r attribute"
+            )
+
     def _build(self):
         """Transfer all arrays to GPU and precompute coefficients."""
         import cupy as cp

@@ -494,6 +494,143 @@ class SkinLayerPhantom:
         return tissue_map
 
 
+class BrainPhantom2D:
+    """2D Brain Phantom for batched FDTD simulations.
+
+    Convenience class matching the Quick Start API. Creates a 2D circular
+    head cross-section with optional hemorrhage for microwave imaging.
+
+    Parameters
+    ----------
+    nx, ny : int, optional
+        Grid dimensions (inferred from solver if using set_phantom).
+    dx : float, optional
+        Grid spacing in meters.
+    hemorrhage_location : tuple of (float, float), optional
+        Hemorrhage center (cm from head center).
+    hemorrhage_radius : float, optional
+        Hemorrhage radius in cm.
+    head_radius_cm : float, optional
+        Head radius in cm (default: 9 cm).
+    use_gabriel_database : bool
+        Use Gabriel tissue database for properties (default True).
+    """
+
+    def __init__(
+        self,
+        nx: int = 600,
+        ny: int = 600,
+        dx: float = 0.5e-3,
+        hemorrhage_location: Optional[Tuple[float, float]] = None,
+        hemorrhage_radius: float = 1.0,
+        head_radius_cm: float = 9.0,
+        use_gabriel_database: bool = True,
+    ):
+        self.nx = nx
+        self.ny = ny
+        self.dx = dx
+        self.head_radius = head_radius_cm * 1e-2
+        self.hemorrhage_location = hemorrhage_location
+        self.hemorrhage_radius = hemorrhage_radius * 1e-2
+        self.use_gabriel = use_gabriel_database
+
+        # Layer thicknesses
+        self.skin_thickness = 3e-3
+        self.skull_thickness = 7e-3
+        self.csf_thickness = 2e-3
+        self.gray_thickness = 10e-3
+
+        if use_gabriel_database:
+            self.db = TissueDatabase()
+
+    def get_eps_map(
+        self, frequency: float
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Generate 2D permittivity and conductivity maps.
+
+        Parameters
+        ----------
+        frequency : float
+            Center frequency in Hz.
+
+        Returns
+        -------
+        eps_r : ndarray (nx, ny)
+            Relative permittivity map.
+        sigma_e : ndarray (nx, ny)
+            Effective conductivity map (S/m).
+        """
+        eps_r = np.ones((self.nx, self.ny), dtype=np.float64)
+        sigma_e = np.zeros((self.nx, self.ny), dtype=np.float64)
+
+        cx, cy = self.nx // 2, self.ny // 2
+
+        if self.use_gabriel:
+            tissues = {
+                'skin': self.db.get('skin_wet'),
+                'skull': self.db.get('skull_cortical_bone'),
+                'csf': self.db.get('cerebrospinal_fluid'),
+                'gray': self.db.get('brain_gray_matter'),
+                'white': self.db.get('brain_white_matter'),
+                'blood': self.db.get('hemorrhage'),
+            }
+            freq_arr = np.array([frequency])
+            eps_values = {}
+            for name, tissue in tissues.items():
+                eps_c = tissue.permittivity(freq_arr)[0]
+                eps_values[name] = (eps_c.real, -eps_c.imag * 2 * np.pi * frequency * 8.854e-12)
+        else:
+            eps_values = {
+                'skin': (40.0, 1.0),
+                'skull': (12.0, 0.2),
+                'csf': (68.0, 2.5),
+                'gray': (52.0, 1.8),
+                'white': (38.0, 1.2),
+                'blood': (61.0, 2.0),
+            }
+
+        # Build concentric layers using vectorized operations
+        x_grid, y_grid = np.meshgrid(
+            np.arange(self.nx), np.arange(self.ny), indexing='ij'
+        )
+        r = np.sqrt(((x_grid - cx) * self.dx)**2 + ((y_grid - cy) * self.dx)**2)
+
+        r_skin = self.head_radius
+        r_skull = r_skin - self.skin_thickness
+        r_csf = r_skull - self.skull_thickness
+        r_gray = r_csf - self.csf_thickness
+        r_white = r_gray - self.gray_thickness
+
+        # Assign layers (outside-in)
+        mask_skin = (r <= r_skin) & (r > r_skull)
+        mask_skull = (r <= r_skull) & (r > r_csf)
+        mask_csf = (r <= r_csf) & (r > r_gray)
+        mask_gray = (r <= r_gray) & (r > r_white)
+        mask_white = (r <= r_white)
+
+        for mask, name in [
+            (mask_skin, 'skin'), (mask_skull, 'skull'),
+            (mask_csf, 'csf'), (mask_gray, 'gray'), (mask_white, 'white')
+        ]:
+            eps_r[mask] = eps_values[name][0]
+            sigma_e[mask] = eps_values[name][1]
+
+        # Add hemorrhage
+        if self.hemorrhage_location is not None:
+            hx_cm, hy_cm = self.hemorrhage_location
+            hx_m = hx_cm * 1e-2
+            hy_m = hy_cm * 1e-2
+            r_hem = np.sqrt(
+                ((x_grid - cx) * self.dx - hx_m)**2 +
+                ((y_grid - cy) * self.dx - hy_m)**2
+            )
+            mask_hem = r_hem <= self.hemorrhage_radius
+            eps_r[mask_hem] = eps_values['blood'][0]
+            sigma_e[mask_hem] = eps_values['blood'][1]
+
+        return eps_r, sigma_e
+
+
 def visualize_phantom_slice(
     tissue_map: npt.NDArray[np.object_],
     frequency: float = 10e9,
