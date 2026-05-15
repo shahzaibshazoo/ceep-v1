@@ -318,11 +318,19 @@ print("="*80)
 
 eps_r, sigma_e = create_brain_phantom(NX, NY, hemorrhage_radius=15)
 result = run_ceep(eps_r, sigma_e, "Medium Hemorrhage")
+meep_result = run_meep(eps_r, sigma_e, "Medium Hemorrhage")
 
-# Skip MEEP for speed (just test CEEP)
-print(f"  [MEEP] Skipped for speed")
-result['meep_mean'] = None
-result['passed'] = 0.5 < result['ceep_mean'] < 10.0  # Reasonable range
+if meep_result:
+    result.update(meep_result)
+    error = abs(result['ceep_mean'] - result['meep_mean']) / result['meep_mean'] * 100
+    print(f"\n  [COMPARISON]")
+    print(f"  CEEP: {result['ceep_mean']:.3f}")
+    print(f"  MEEP: {result['meep_mean']:.3f}")
+    print(f"  Error: {error:.1f}%")
+    result['error'] = error
+    result['passed'] = error < 10.0
+else:
+    result['passed'] = 0.5 < result['ceep_mean'] < 10.0
 
 results.append(result)
 
@@ -335,10 +343,19 @@ print("="*80)
 
 eps_r, sigma_e = create_brain_phantom(NX, NY, hemorrhage_radius=20)
 result = run_ceep(eps_r, sigma_e, "Large Hemorrhage")
+meep_result = run_meep(eps_r, sigma_e, "Large Hemorrhage")
 
-print(f"  [MEEP] Skipped for speed")
-result['meep_mean'] = None
-result['passed'] = 0.5 < result['ceep_mean'] < 10.0
+if meep_result:
+    result.update(meep_result)
+    error = abs(result['ceep_mean'] - result['meep_mean']) / result['meep_mean'] * 100
+    print(f"\n  [COMPARISON]")
+    print(f"  CEEP: {result['ceep_mean']:.3f}")
+    print(f"  MEEP: {result['meep_mean']:.3f}")
+    print(f"  Error: {error:.1f}%")
+    result['error'] = error
+    result['passed'] = error < 10.0
+else:
+    result['passed'] = 0.5 < result['ceep_mean'] < 10.0
 
 results.append(result)
 
@@ -351,10 +368,19 @@ print("="*80)
 
 eps_r, sigma_e = create_brain_phantom(NX, NY, hemorrhage_radius=10, hemorrhage_offset=(8, 5))
 result = run_ceep(eps_r, sigma_e, "Off-Center Hemorrhage")
+meep_result = run_meep(eps_r, sigma_e, "Off-Center Hemorrhage")
 
-print(f"  [MEEP] Skipped for speed")
-result['meep_mean'] = None
-result['passed'] = 0.5 < result['ceep_mean'] < 10.0
+if meep_result:
+    result.update(meep_result)
+    error = abs(result['ceep_mean'] - result['meep_mean']) / result['meep_mean'] * 100
+    print(f"\n  [COMPARISON]")
+    print(f"  CEEP: {result['ceep_mean']:.3f}")
+    print(f"  MEEP: {result['meep_mean']:.3f}")
+    print(f"  Error: {error:.1f}%")
+    result['error'] = error
+    result['passed'] = error < 10.0
+else:
+    result['passed'] = 0.5 < result['ceep_mean'] < 10.0
 
 results.append(result)
 
