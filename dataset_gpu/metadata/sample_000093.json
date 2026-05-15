@@ -1,0 +1,7 @@
+{
+  "sample_id": 93,
+  "include_hemorrhage": false,
+  "hemorrhage_params": null,
+  "snr_db": 53.26320802757272,
+  "simulator": "neurowave_gpu_optimized"
+}

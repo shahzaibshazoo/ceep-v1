@@ -1,0 +1,13 @@
+{
+  "sample_id": 67,
+  "include_hemorrhage": true,
+  "hemorrhage_params": {
+    "cx": -3.623874731358135,
+    "cy": 1.670061780651267,
+    "rx": 0.7895149703263806,
+    "ry": 0.7895149703263806,
+    "angle": 0.2780829446859956
+  },
+  "snr_db": 58.2445503220233,
+  "simulator": "neurowave_gpu_optimized"
+}
