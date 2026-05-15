@@ -63,7 +63,7 @@ except Exception as e:
 print("\n[2/3] Importing MEEP...")
 try:
     import meep as mp
-    print(f"  ✓ MEEP ready (version {mp.__version__})")
+    print(f"  ✓ MEEP ready")
     HAS_MEEP = True
 except ImportError:
     print("  ⚠️  MEEP not installed")
