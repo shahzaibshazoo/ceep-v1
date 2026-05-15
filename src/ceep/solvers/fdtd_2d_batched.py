@@ -208,8 +208,21 @@ class BatchedFDTD2D:
         # CPML b and c coefficients
         # Standard CPML formulation (Taflove & Hagness, 3rd ed.)
         dt = self.dt
-        b_profile = np.exp(-sigma_profile * dt / EPS_0)
-        c_profile = (b_profile - 1.0)  # Simplified stable formulation
+        kappa = 1.0  # Stretching factor (typically 1)
+        alpha = 0.0  # Complex frequency shift (typically 0 for basic CPML)
+
+        b_profile = np.exp(-(sigma_profile / kappa + alpha) * dt / EPS_0)
+
+        # CRITICAL FIX: c coefficient must properly scale the derivative
+        # c = sigma / (sigma * kappa + kappa^2 * alpha) * (b - 1)
+        # For alpha=0, kappa=1: c = (b - 1) / kappa = b - 1
+        # But we need to scale by sigma for proper absorption
+        c_profile = np.zeros_like(sigma_profile)
+        for i in range(n):
+            if sigma_profile[i] > 1e-10:
+                c_profile[i] = sigma_profile[i] / (sigma_profile[i] * kappa + kappa**2 * alpha) * (b_profile[i] - 1.0)
+            else:
+                c_profile[i] = 0.0
 
         self.cpml_b_x = cp.asarray(b_profile)
         self.cpml_c_x = cp.asarray(c_profile)
