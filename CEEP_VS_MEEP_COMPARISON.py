@@ -104,11 +104,9 @@ FREQUENCY = 2e9  # 2 GHz
 C_0 = 3e8  # Speed of light
 WAVELENGTH = C_0 / FREQUENCY  # 0.15 m = 150 mm
 
-# Calculate timesteps for one complete period
+# Use same timesteps as validation (NOT 5 full periods - that's too long!)
 DT = DX / (C_0 * np.sqrt(2.0)) * 0.99
-PERIOD = 1.0 / FREQUENCY  # seconds
-STEPS_PER_PERIOD = int(PERIOD / DT)
-TOTAL_STEPS = STEPS_PER_PERIOD * 5  # Run for 5 periods
+TOTAL_STEPS = 100  # Match MEEP validation reference
 
 # Source and probe locations
 SRC_X, SRC_Y = NX // 2, NY // 2
@@ -176,7 +174,7 @@ if mp is not None:
         meep_start = time.time()
 
         # Setup MEEP geometry
-        cell_size = mp.Vector3(NX * DX, NY * DX, 0)
+        cell_size = mp.vec(NX * DX, NY * DX, 0)
         resolution = 1.0 / DX  # points per meter
 
         # Gaussian source
@@ -184,7 +182,7 @@ if mp is not None:
             mp.Source(
                 mp.GaussianSource(frequency=FREQUENCY/C_0, fwidth=FREQUENCY/C_0/5),
                 component=mp.Ez,
-                center=mp.Vector3((SRC_X - NX/2) * DX, (SRC_Y - NY/2) * DX, 0)
+                center=mp.vec((SRC_X - NX/2) * DX, (SRC_Y - NY/2) * DX, 0)
             )
         ]
 
@@ -201,7 +199,7 @@ if mp is not None:
         )
 
         # Monitor point
-        monitor_point = mp.Vector3((PROBE_X - NX/2) * DX, (PROBE_Y - NY/2) * DX, 0)
+        monitor_point = mp.vec((PROBE_X - NX/2) * DX, (PROBE_Y - NY/2) * DX, 0)
 
         # Run and record
         signal_meep = []
@@ -333,13 +331,13 @@ if mp is not None:
         meep_start = time.time()
 
         # Setup MEEP geometry with dielectric cylinder
-        cell_size = mp.Vector3(NX * DX, NY * DX, 0)
+        cell_size = mp.vec(NX * DX, NY * DX, 0)
         resolution = 1.0 / DX
 
         geometry = [
             mp.Cylinder(
                 radius=10 * DX,
-                center=mp.Vector3(0, 0, 0),
+                center=mp.vec(0, 0, 0),
                 material=mp.Medium(epsilon=4.0)
             )
         ]
@@ -348,7 +346,7 @@ if mp is not None:
             mp.Source(
                 mp.GaussianSource(frequency=FREQUENCY/C_0, fwidth=FREQUENCY/C_0/5),
                 component=mp.Ez,
-                center=mp.Vector3((SRC_X - NX/2) * DX, (SRC_Y - NY/2) * DX, 0)
+                center=mp.vec((SRC_X - NX/2) * DX, (SRC_Y - NY/2) * DX, 0)
             )
         ]
 
@@ -363,7 +361,7 @@ if mp is not None:
             force_complex_fields=False
         )
 
-        monitor_point = mp.Vector3((PROBE_X - NX/2) * DX, (PROBE_Y - NY/2) * DX, 0)
+        monitor_point = mp.vec((PROBE_X - NX/2) * DX, (PROBE_Y - NY/2) * DX, 0)
 
         signal_meep = []
 
