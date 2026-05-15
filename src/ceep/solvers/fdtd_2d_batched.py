@@ -241,18 +241,32 @@ class BatchedFDTD2D:
         self.cpml_b_y = cp.asarray(b_profile)
         self.cpml_c_y = cp.asarray(c_profile)
 
-        # Psi arrays for each face: shape (batch, cpml_thickness, ny or nx)
-        # X-faces (left and right)
-        self.psi_hyx_lo = cp.zeros((B, n, ny), dtype=cp.float64)
-        self.psi_hyx_hi = cp.zeros((B, n, ny), dtype=cp.float64)
-        self.psi_ezx_lo = cp.zeros((B, n, ny), dtype=cp.float64)
-        self.psi_ezx_hi = cp.zeros((B, n, ny), dtype=cp.float64)
+        # Psi arrays for each face
+        # Naming convention: psi_{field}_{direction}_{side}
+        #
+        # For H-field:
+        # - Hy affected by X-direction PML: psi_hxy (X affects y-component)
+        #   Shape: (batch, n, ny) - indexed as psi[:, i_x, j_y]
+        # - Hx affected by Y-direction PML: psi_hyx (Y affects x-component)
+        #   Shape: (batch, nx, n) - indexed as psi[:, i_x, j_y]
+        #
+        # For E-field:
+        # - Ez affected by X-direction PML: psi_ezx
+        #   Shape: (batch, n, ny) - indexed as psi[:, i_x, j_y]
+        # - Ez affected by Y-direction PML: psi_ezy
+        #   Shape: (batch, nx, n) - indexed as psi[:, i_x, j_y]
 
-        # Y-faces (bottom and top)
-        self.psi_hxy_lo = cp.zeros((B, nx, n), dtype=cp.float64)
-        self.psi_hxy_hi = cp.zeros((B, nx, n), dtype=cp.float64)
-        self.psi_ezy_lo = cp.zeros((B, nx, n), dtype=cp.float64)
-        self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)
+        # X-direction PML (affects Hy and Ez)
+        self.psi_hxy_lo = cp.zeros((B, n, ny), dtype=cp.float64)  # Left
+        self.psi_hxy_hi = cp.zeros((B, n, ny), dtype=cp.float64)  # Right
+        self.psi_ezx_lo = cp.zeros((B, n, ny), dtype=cp.float64)  # Left
+        self.psi_ezx_hi = cp.zeros((B, n, ny), dtype=cp.float64)  # Right
+
+        # Y-direction PML (affects Hx and Ez)
+        self.psi_hyx_lo = cp.zeros((B, nx, n), dtype=cp.float64)  # Bottom
+        self.psi_hyx_hi = cp.zeros((B, nx, n), dtype=cp.float64)  # Top
+        self.psi_ezy_lo = cp.zeros((B, nx, n), dtype=cp.float64)  # Bottom
+        self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)  # Top
 
     def _apply_h_cpml(self):
         """Apply CPML H-field updates in PML regions only.
