@@ -269,158 +269,135 @@ class BatchedFDTD2D:
         self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)  # Top
 
     def _apply_h_cpml(self):
-        """Apply CPML H-field updates in PML regions only.
+        """Apply CPML to H-field in PML regions.
 
-        Standard updates are NOT applied in PML regions - this function
-        handles the complete H-field update using psi variables.
+        In PML regions, H is updated using psi variables instead of direct derivatives.
+        This provides exponential absorption of outgoing waves.
         """
         cp = self.xp
         n = self.cpml_n
         nx, ny = self.nx, self.ny
 
-        # X-direction PML: affects Hy
-        # Left boundary
+        from ceep.core.constants import MU_0
+        dt_mu = self.dt / MU_0
+
+        # X-direction PML: affects Hy (left and right boundaries)
         for i in range(n):
+            # Left boundary
             if i < nx - 1:
                 dEz_dx = (self.ez[:, i+1, :] - self.ez[:, i, :]) * self.inv_dx
-
-                # Update psi
                 self.psi_hxy_lo[:, i, :] = (
                     self.cpml_b_x[i] * self.psi_hxy_lo[:, i, :]
                     + self.cpml_c_x[i] * dEz_dx
                 )
+                # Update Hy using psi
+                self.hy[:, i, :] = self.hy[:, i, :] + dt_mu * self.psi_hxy_lo[:, i, :]
 
-                # Full H-field update using psi (not derivative)
-                self.hy[:, i, :] = (
-                    self.da[0, i, :] * self.hy[:, i, :]
-                    + self.db[0, i, :] * self.psi_hxy_lo[:, i, :]
-                )
-
-        # Right boundary
-        for i in range(n):
+            # Right boundary
             x_idx = nx - n + i
             if x_idx < nx - 1:
                 dEz_dx = (self.ez[:, x_idx+1, :] - self.ez[:, x_idx, :]) * self.inv_dx
-
                 self.psi_hxy_hi[:, i, :] = (
                     self.cpml_b_x[n-1-i] * self.psi_hxy_hi[:, i, :]
                     + self.cpml_c_x[n-1-i] * dEz_dx
                 )
+                # Update Hy using psi
+                self.hy[:, x_idx, :] = self.hy[:, x_idx, :] + dt_mu * self.psi_hxy_hi[:, i, :]
 
-                # Full H-field update using psi
-                self.hy[:, x_idx, :] = (
-                    self.da[0, x_idx, :] * self.hy[:, x_idx, :]
-                    + self.db[0, x_idx, :] * self.psi_hxy_hi[:, i, :]
-                )
-
-        # Y-direction PML: affects Hx
-        # Bottom boundary
+        # Y-direction PML: affects Hx (bottom and top boundaries)
         for j in range(n):
+            # Bottom boundary
             if j < ny - 1:
                 dEz_dy = (self.ez[:, :, j+1] - self.ez[:, :, j]) * self.inv_dy
-
                 self.psi_hyx_lo[:, :, j] = (
                     self.cpml_b_y[j] * self.psi_hyx_lo[:, :, j]
                     + self.cpml_c_y[j] * dEz_dy
                 )
+                # Update Hx using psi (minus sign)
+                self.hx[:, :, j] = self.hx[:, :, j] - dt_mu * self.psi_hyx_lo[:, :, j]
 
-                # Full H-field update using psi (minus sign for Hx y-derivative)
-                self.hx[:, :, j] = (
-                    self.da[0, :, j] * self.hx[:, :, j]
-                    - self.db[0, :, j] * self.psi_hyx_lo[:, :, j]
-                )
-
-        # Top boundary
-        for j in range(n):
+            # Top boundary
             y_idx = ny - n + j
             if y_idx < ny - 1:
                 dEz_dy = (self.ez[:, :, y_idx+1] - self.ez[:, :, y_idx]) * self.inv_dy
-
                 self.psi_hyx_hi[:, :, j] = (
                     self.cpml_b_y[n-1-j] * self.psi_hyx_hi[:, :, j]
                     + self.cpml_c_y[n-1-j] * dEz_dy
                 )
-
-                # Full H-field update using psi
-                self.hx[:, :, y_idx] = (
-                    self.da[0, :, y_idx] * self.hx[:, :, y_idx]
-                    - self.db[0, :, y_idx] * self.psi_hyx_hi[:, :, j]
-                )
+                # Update Hx using psi (minus sign)
+                self.hx[:, :, y_idx] = self.hx[:, :, y_idx] - dt_mu * self.psi_hyx_hi[:, :, j]
 
     def _apply_e_cpml(self):
-        """Apply CPML E-field updates in PML regions.
+        """Apply CPML to E-field in PML regions.
 
-        For E-field, we need psi for BOTH X and Y directions in PML regions.
-        In corner regions, both psi_x and psi_y contribute.
+        E-field needs both X and Y psi in corners.
         """
         cp = self.xp
         n = self.cpml_n
         nx, ny = self.nx, self.ny
 
-        # X-direction PML: affects Ez in left/right strips
-        # Left boundary
-        for i in range(n):
-            if i + 1 < nx:
-                for j in range(1, ny):
-                    dHy_dx = (self.hy[:, i+1, j] - self.hy[:, i, j]) * self.inv_dx
-                    dHx_dy = (self.hx[:, i+1, j] - self.hx[:, i+1, j-1]) * self.inv_dy
+        from ceep.core.constants import EPS_0
 
-                    # Update psi_x
+        # Get epsilon at each point for proper scaling
+        dt_eps = self.dt / (self._eps_r * EPS_0)
+
+        # X-direction PML: affects Ez
+        for i in range(n):
+            # Left boundary
+            for j in range(1, ny):
+                if i + 1 < nx:
+                    dHy_dx = (self.hy[:, i+1, j] - self.hy[:, i, j]) * self.inv_dx
+
                     self.psi_ezx_lo[:, i, j] = (
                         self.cpml_b_x[i] * self.psi_ezx_lo[:, i, j]
                         + self.cpml_c_x[i] * dHy_dx
                     )
 
-                    # E-field update: use psi_x for x-deriv, standard for y-deriv
-                    self.ez[:, i+1, j] = (
-                        self.ca[0, i+1, j] * self.ez[:, i+1, j]
-                        + self.cb[0, i+1, j] * (self.psi_ezx_lo[:, i, j] - dHx_dy)
+                    # Update Ez using psi
+                    self.ez[:, i+1, j] = self.ez[:, i+1, j] + dt_eps[i+1, j] * self.psi_ezx_lo[:, i, j]
+
+            # Right boundary
+            x_idx = nx - n + i
+            for j in range(1, ny):
+                if x_idx > 0 and x_idx < nx:
+                    dHy_dx = (self.hy[:, x_idx, j] - self.hy[:, x_idx-1, j]) * self.inv_dx
+
+                    self.psi_ezx_hi[:, i, j] = (
+                        self.cpml_b_x[n-1-i] * self.psi_ezx_hi[:, i, j]
+                        + self.cpml_c_x[n-1-i] * dHy_dx
                     )
 
-        # Right boundary
-        for i in range(n):
-            x_idx = nx - n + i
-            if x_idx > 0:
-                dHy_dx = (self.hy[:, x_idx, :] - self.hy[:, x_idx-1, :]) * self.inv_dx
+                    # Update Ez using psi
+                    self.ez[:, x_idx, j] = self.ez[:, x_idx, j] + dt_eps[x_idx, j] * self.psi_ezx_hi[:, i, j]
 
-                self.psi_ezx_hi[:, i, :] = (
-                    self.cpml_b_x[n-1-i] * self.psi_ezx_hi[:, i, :]
-                    + self.cpml_c_x[n-1-i] * dHy_dx
-                )
-
-                # Remove standard, add CPML
-                self.ez[:, x_idx, :] -= self.cb[0, x_idx, :] * self.inv_dx * dHy_dx
-                self.ez[:, x_idx, :] += self.cb[0, x_idx, :] * self.psi_ezx_hi[:, i, :]
-
-        # Y-direction PML
-        # Bottom boundary
+        # Y-direction PML: affects Ez
         for j in range(n):
-            if j + 1 < ny:
-                dHx_dy = (self.hx[:, :, j+1] - self.hx[:, :, j]) * self.inv_dy
+            # Bottom boundary
+            for i in range(1, nx):
+                if j + 1 < ny:
+                    dHx_dy = (self.hx[:, i, j+1] - self.hx[:, i, j]) * self.inv_dy
 
-                self.psi_ezy_lo[:, :, j] = (
-                    self.cpml_b_y[j] * self.psi_ezy_lo[:, :, j]
-                    + self.cpml_c_y[j] * (-dHx_dy)
-                )
+                    self.psi_ezy_lo[:, i, j] = (
+                        self.cpml_b_y[j] * self.psi_ezy_lo[:, i, j]
+                        + self.cpml_c_y[j] * dHx_dy
+                    )
 
-                # Remove standard, add CPML (note: E has minus sign for dy term)
-                self.ez[:, :, j+1] += self.cb[0, :, j+1] * self.inv_dy * dHx_dy  # Remove (add because it was subtracted)
-                self.ez[:, :, j+1] += self.cb[0, :, j+1] * self.psi_ezy_lo[:, :, j]  # Add CPML
+                    # Update Ez using psi (minus sign for y-derivative)
+                    self.ez[:, i, j+1] = self.ez[:, i, j+1] - dt_eps[i, j+1] * self.psi_ezy_lo[:, i, j]
 
-        # Top boundary
-        for j in range(n):
+            # Top boundary
             y_idx = ny - n + j
-            if y_idx > 0:
-                dHx_dy = (self.hx[:, :, y_idx] - self.hx[:, :, y_idx-1]) * self.inv_dy
+            for i in range(1, nx):
+                if y_idx > 0 and y_idx < ny:
+                    dHx_dy = (self.hx[:, i, y_idx] - self.hx[:, i, y_idx-1]) * self.inv_dy
 
-                self.psi_ezy_hi[:, :, j] = (
-                    self.cpml_b_y[n-1-j] * self.psi_ezy_hi[:, :, j]
-                    + self.cpml_c_y[n-1-j] * (-dHx_dy)
-                )
+                    self.psi_ezy_hi[:, i, j] = (
+                        self.cpml_b_y[n-1-j] * self.psi_ezy_hi[:, i, j]
+                        + self.cpml_c_y[n-1-j] * dHx_dy
+                    )
 
-                # Remove standard, add CPML
-                self.ez[:, :, y_idx] += self.cb[0, :, y_idx] * self.inv_dy * dHx_dy
-                self.ez[:, :, y_idx] += self.cb[0, :, y_idx] * self.psi_ezy_hi[:, :, j]
+                    # Update Ez using psi (minus sign for y-derivative)
+                    self.ez[:, i, y_idx] = self.ez[:, i, y_idx] - dt_eps[i, y_idx] * self.psi_ezy_hi[:, i, j]
 
     def run(self) -> Dict[int, Dict[int, np.ndarray]]:
         """Run all batched simulations and return S-matrix data.
