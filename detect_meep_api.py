@@ -68,3 +68,26 @@ print("Checking mp.Source signature...")
 import inspect
 if hasattr(mp, 'Source'):
     print(inspect.signature(mp.Source.__init__))
+else:
+    print("mp.Source doesn't exist!")
+
+print()
+print("="*60)
+print("ALL MEEP ATTRIBUTES (showing everything):")
+print("="*60)
+for attr in sorted(dir(mp)):
+    if not attr.startswith('_'):
+        obj = getattr(mp, attr)
+        print(f"{attr:<30} {type(obj).__name__}")
+
+print()
+print("="*60)
+print("CHECKING FOR SUBMODULES:")
+print("="*60)
+for attr in ['meep_swig', 'simulation', 'source']:
+    if hasattr(mp, attr):
+        submod = getattr(mp, attr)
+        print(f"\nmp.{attr} has:")
+        for item in dir(submod)[:10]:
+            if not item.startswith('_'):
+                print(f"  {item}")
