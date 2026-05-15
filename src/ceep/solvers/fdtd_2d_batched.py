@@ -205,28 +205,24 @@ class BatchedFDTD2D:
         d = np.arange(n, dtype=np.float64)
         sigma_profile = sigma_max * ((n - 1 - d) / (n - 1))**3
 
-        # CPML coefficients - Simplified approach
-        # The psi equation: psi^(n+1) = b * psi^n + c * derivative
-        # The field correction: field += dt/eps0 * psi
+        # CPML coefficients - Standard formulation (Roden & Gedney 2000)
+        # Simplified CPML with α=0, κ=1:
         #
-        # For stable absorption:
-        # b = exp(-sigma * dt / eps0)  -- decay factor for psi memory
-        # c = (1 - b) / (dx * sigma)   -- scaling for derivative accumulation
+        # Psi update: ψ^(n+1) = b * ψ^n + c * (∂F/∂x)^n
+        # Field update: H^(n+1/2) = H^(n-1/2) + (dt/μ) * ψ^(n+1/2)
         #
-        # When sigma is large: b→0, psi decays quickly (strong damping)
-        # When sigma is small: b→1, psi accumulates slowly (weak damping)
+        # Coefficients:
+        # b = exp(-σ * dt / ε₀)    -- exponential decay (0 < b < 1)
+        # c = b - 1                 -- NEGATIVE scaling (-1 < c < 0)
+        #
+        # The negative c provides damping through the recursive psi update
 
         dt = self.dt
         b_profile = np.exp(-sigma_profile * dt / EPS_0)
 
-        # c coefficient: scale derivative by inverse conductivity and grid spacing
-        # This ensures psi grows proportionally to field oscillations
-        c_profile = np.zeros_like(sigma_profile)
-        for i in range(n):
-            if sigma_profile[i] > 1e-10:
-                c_profile[i] = (1.0 - b_profile[i]) / (self.dx * sigma_profile[i])
-            else:
-                c_profile[i] = 0.0
+        # CRITICAL: c = b - 1 (not (1-b)!!)
+        # Since 0 < b < 1, we get -1 < c < 0 (negative for damping)
+        c_profile = b_profile - 1.0
 
         self.cpml_b_x = cp.asarray(b_profile)
         self.cpml_c_x = cp.asarray(c_profile)
