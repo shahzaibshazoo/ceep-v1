@@ -449,14 +449,18 @@ class BatchedFDTD2D:
         num_probes = len(self.probe_positions)
 
         # Check for fused kernels
-        try:
-            from ceep.cuda.kernels import (
-                launch_batched_h_2d, launch_batched_e_2d,
-                launch_batched_inject, launch_batched_record
-            )
-            use_fused = True
-        except ImportError:
-            use_fused = False
+        # DISABLED: Fused kernels don't support CPML yet
+        # TODO: Implement CPML in CUDA kernels for performance
+        use_fused = False
+
+        # try:
+        #     from ceep.cuda.kernels import (
+        #         launch_batched_h_2d, launch_batched_e_2d,
+        #         launch_batched_inject, launch_batched_record
+        #     )
+        #     use_fused = True
+        # except ImportError:
+        #     use_fused = False
 
         # Flatten coefficient arrays for kernel (remove broadcast dim)
         ca_flat = self.ca[0]  # (nx, ny)
