@@ -16,7 +16,6 @@ Date: 2026-05-13
 
 from __future__ import annotations
 
-import time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -24,12 +23,13 @@ import numpy.typing as npt
 
 from ceep.core.config import SimulationConfig
 from ceep.core.grid_3d import Grid3D
-from ceep.core.base import BaseSource
+from ceep.core.base import BaseSource, BaseBoundary
 from ceep.core.backend import to_scalar, to_numpy, get_backend_module, is_gpu_active
+from ceep.solvers.fdtd_base import FdtdBase
 from ceep.boundaries.absorbing import CPML
 
 
-class FDTD3D:
+class FDTD3D(FdtdBase):
     """Complete 3D FDTD electromagnetic solver.
 
     Implements the full 3D Yee algorithm with all 6 field components,
@@ -62,36 +62,31 @@ class FDTD3D:
         self,
         config: SimulationConfig,
         sources: Optional[List[BaseSource]] = None,
-        boundaries: Optional[List] = None,
+        boundaries: Optional[List[BaseBoundary]] = None,
         record_field: Optional[str] = None,
         probe_points: Optional[List[Tuple[int, int, int]]] = None
     ):
         """Initialize the 3D FDTD solver."""
-        self.config = config
-        self.grid = Grid3D(config.grid, config.dt)
-        self.sources = sources or []
-        self.boundaries = boundaries or []
-        self.record_field = record_field
-        self._step = 0
-        self._use_fused_kernels = False
-        if is_gpu_active():
-            from ceep.cuda.kernels import cuda_kernels_available
-            self._use_fused_kernels = cuda_kernels_available()
+        # Call parent class initialization
+        super().__init__(
+            config=config,
+            sources=sources,
+            boundaries=boundaries,
+            record_field=record_field,
+            record_interval=1,  # 3D hardcodes every 10 steps in record()
+            probe_points=probe_points,
+        )
 
-        # Initialize boundaries
+        # Initialize the 3D grid
+        self.grid = Grid3D(config.grid, config.dt)
+
+        # Initialize CPML boundaries
         for boundary in self.boundaries:
             if isinstance(boundary, CPML):
                 boundary.initialize_3d(self.grid, self.config.dt)
 
-        # Probe recording
-        self.probe_points = probe_points or []
-        self.probe_data: Dict[Tuple[int, int, int], List[float]] = {}
+        # Advanced probe tracking (complementary to base class probe_data)
         self._probes: Dict[str, dict] = {}
-        for point in self.probe_points:
-            self.probe_data[point] = []
-
-        # Field snapshots
-        self.field_snapshots: List[npt.NDArray[np.float64]] = []
 
     def add_probe(self, x: int, y: int, z: int, component: str) -> None:
         """Add a time-domain probe at a specific grid location."""
@@ -200,11 +195,16 @@ class FDTD3D:
             arr[src.x, src.y, src.z] += val
 
     def _record(self) -> None:
-        """Record fields at probes."""
+        """Record fields at probes and snapshots."""
         field_map = {
             "Ex": self.grid.ex, "Ey": self.grid.ey, "Ez": self.grid.ez,
             "Hx": self.grid.hx, "Hy": self.grid.hy, "Hz": self.grid.hz,
         }
+
+        # Record field snapshots (every 10 steps to match original behavior)
+        if self.record_field and (self._step % 10 == 0):
+            if self.record_field in field_map:
+                self.field_snapshots.append(to_numpy(field_map[self.record_field]))
 
         # Record from probe_data dict (simple x,y,z tuples, default to Ez)
         if self.probe_data:
@@ -220,79 +220,18 @@ class FDTD3D:
             arr = field_map[probe["comp"]]
             probe["data"].append(to_scalar(arr[loc]))
 
-    def step(self) -> None:
-        """Perform one complete FDTD timestep.
-
-        Order of operations (Yee leapfrog):
-        1. Update H fields (n → n+1/2)
-        2. Apply H-field boundaries
-        3. Update E fields (n → n+1)
-        4. Inject sources
-        5. Apply E-field boundaries
-        6. Record fields
-        """
-        # Update magnetic fields
-        self._update_h_fields()
-
-        # Apply boundary conditions to H
+    def _apply_boundaries_h(self) -> None:
+        """Apply boundary conditions to H-fields."""
         for boundary in self.boundaries:
             if isinstance(boundary, CPML):
                 boundary.apply_h_3d(self.grid)
 
-        # Update electric fields
-        self._update_e_fields()
-
-        # Inject sources
-        self._inject_sources()
-
-        # Apply boundary conditions to E
+    def _apply_boundaries_e(self) -> None:
+        """Apply boundary conditions to E-fields."""
         for boundary in self.boundaries:
             if isinstance(boundary, CPML):
                 boundary.apply_e_3d(self.grid)
 
-        # Record fields at probes
-        self._record()
-
-        # Store field snapshot if requested (always on CPU for user access)
-        if self.record_field and (self._step % 10 == 0):  # Every 10 steps
-            field_map = {
-                "Ex": self.grid.ex, "Ey": self.grid.ey, "Ez": self.grid.ez,
-                "Hx": self.grid.hx, "Hy": self.grid.hy, "Hz": self.grid.hz,
-            }
-            if self.record_field in field_map:
-                self.field_snapshots.append(to_numpy(field_map[self.record_field]))
-
-        self._step += 1
-
-    def run(self, num_steps: Optional[int] = None, verbose: bool = False) -> None:
-        """Run the 3D FDTD simulation.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Number of timesteps (defaults to config.total_steps).
-        verbose : bool
-            Print progress information.
-        """
-        steps = num_steps or self.config.total_steps
-        start_time = time.time()
-
-        for i in range(steps):
-            self.step()
-
-            if verbose and (i % max(1, steps // 10) == 0):
-                elapsed = time.time() - start_time
-                rate = (i + 1) / elapsed if elapsed > 0 else 0
-                eta = (steps - i - 1) / rate if rate > 0 else 0
-                print(f"Step {i+1}/{steps} | {rate:.1f} steps/s | ETA: {eta:.1f}s")
-
-        if verbose:
-            elapsed = time.time() - start_time
-            nx, ny, nz = self.grid.nx, self.grid.ny, self.grid.nz
-            cell_updates = nx * ny * nz * steps
-            rate = cell_updates / elapsed / 1e6  # Mcell-updates/sec
-            print(f"\nCompleted {steps} steps in {elapsed:.2f}s")
-            print(f"Performance: {rate:.2f} M cell-updates/sec")
 
     def get_probe_data(self, x: int, y: int, z: int) -> npt.NDArray[np.float64]:
         """Get recorded time-domain data at a probe point.

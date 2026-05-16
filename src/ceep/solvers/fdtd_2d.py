@@ -32,16 +32,17 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import numpy.typing as npt
 
-from ceep.core.base import BaseBoundary, BaseSource, BaseSolver
+from ceep.core.base import BaseBoundary, BaseSource
 from ceep.core.config import SimulationConfig, SimulationMode
 from ceep.core.grid import Grid2D
 from ceep.core.backend import to_scalar, to_numpy, is_gpu_active
 from ceep.solvers.dft import DFTMonitor
+from ceep.solvers.fdtd_base import FdtdBase
 from ceep.sources.plane_wave import PlaneWaveSource
 
 
 @dataclass
-class FDTD2D(BaseSolver):
+class FDTD2D(FdtdBase):
     """2D FDTD solver supporting TMz and TEz modes.
 
     Parameters
@@ -79,20 +80,20 @@ class FDTD2D(BaseSolver):
 
     # Internal state
     grid: Grid2D = field(init=False, repr=False)
-    _step: int = field(init=False, default=0)
-    field_snapshots: List[npt.NDArray[np.float64]] = field(
-        init=False, default_factory=list, repr=False
-    )
-    probe_data: Dict[Tuple[int, int], List[float]] = field(
-        init=False, default_factory=dict, repr=False
-    )
 
     def __post_init__(self) -> None:
         """Auto-initialize on creation."""
-        self._use_fused_kernels = False
-        if is_gpu_active():
-            from ceep.cuda.kernels import cuda_kernels_available
-            self._use_fused_kernels = cuda_kernels_available()
+        # Call parent class initialization
+        FdtdBase.__init__(
+            self,
+            config=self.config,
+            sources=self.sources,
+            boundaries=self.boundaries,
+            record_field=self.record_field,
+            record_interval=self.record_interval,
+            probe_points=self.probe_points,
+        )
+        # Initialize the 2D grid
         self.initialize(self.config)
 
     def initialize(self, config: SimulationConfig) -> None:
@@ -102,6 +103,8 @@ class FDTD2D(BaseSolver):
         self._step = 0
         self.field_snapshots = []
         self.probe_data = {pt: [] for pt in self.probe_points}
+        for monitor in self.dft_monitors:
+            monitor.initialize(self.config.dt)
 
     def _update_h_fields_tmz(self) -> None:
         """Update Hx and Hy for TMz mode.
@@ -285,36 +288,23 @@ class FDTD2D(BaseSolver):
             field_arr = self.get_field(monitor.component)
             monitor.update(field_arr, self._step, self.config.dt)
 
-    def step(self) -> None:
-        """Advance simulation by one timestep (leapfrog scheme).
-
-        Order of operations:
-        1. Update H-fields (n-½ → n+½)
-        2. Apply H-field boundary corrections
-        3. Update E-fields (n → n+1)
-        4. Inject sources
-        5. Apply E-field boundary corrections
-        6. Record data
-        """
+    def _update_h_fields(self) -> None:
+        """Dispatch to mode-specific H-field update."""
         if self.config.mode == SimulationMode.TMZ:
             self._update_h_fields_tmz()
-            self._apply_boundaries_h()
-            self._apply_tfsf_h()
-            self._update_e_fields_tmz()
-            self._inject_sources()
-            self._apply_boundaries_e()
-            self._apply_tfsf_e()
         elif self.config.mode == SimulationMode.TEZ:
             self._update_h_fields_tez()
-            self._apply_boundaries_h()
-            self._update_e_fields_tez()
-            self._inject_sources()
-            self._apply_boundaries_e()
         else:
             raise NotImplementedError(f"Solver not implemented for mode {self.config.mode}")
 
-        self._record()
-        self._step += 1
+    def _update_e_fields(self) -> None:
+        """Dispatch to mode-specific E-field update."""
+        if self.config.mode == SimulationMode.TMZ:
+            self._update_e_fields_tmz()
+        elif self.config.mode == SimulationMode.TEZ:
+            self._update_e_fields_tez()
+        else:
+            raise NotImplementedError(f"Solver not implemented for mode {self.config.mode}")
 
     def _apply_tfsf_h(self) -> None:
         """Apply TF/SF corrections to H-fields for PlaneWaveSources."""
@@ -335,17 +325,6 @@ class FDTD2D(BaseSolver):
                     self.config.grid.dx, self.config.dt, self._step
                 )
 
-    def run(self, num_steps: Optional[int] = None) -> None:
-        """Run simulation for specified number of steps.
-
-        Parameters
-        ----------
-        num_steps : int, optional
-            Steps to run. Defaults to config.num_steps.
-        """
-        steps = num_steps or self.config.num_steps
-        for _ in range(steps):
-            self.step()
 
     def get_field(self, component: str) -> npt.NDArray[np.float64]:
         """Get current field component array.
@@ -363,10 +342,3 @@ class FDTD2D(BaseSolver):
             raise ValueError(f"Unknown component '{component}'. Use: {list(field_map)}")
         return field_map[component]
 
-    @property
-    def current_step(self) -> int:
-        return self._step
-
-    @property
-    def current_time(self) -> float:
-        return self._step * self.config.dt
