@@ -35,15 +35,23 @@ References
 # Import core classes
 from .grid import Grid2D
 from .grid_3d import Grid3D
-from .config import Config2D, Config3D
+from .config import GridConfig, SimulationConfig, SimulationMode, Backend
 from .backend import set_backend, get_backend, is_backend_available
 from .constants import PHYSICAL_CONSTANTS
+
+# Legacy aliases for backward compatibility
+Config2D = GridConfig
+Config3D = GridConfig
 
 __all__ = [
     'Grid2D',
     'Grid3D',
-    'Config2D',
-    'Config3D',
+    'GridConfig',
+    'SimulationConfig',
+    'SimulationMode',
+    'Backend',
+    'Config2D',  # Legacy
+    'Config3D',  # Legacy
     'set_backend',
     'get_backend',
     'is_backend_available',
