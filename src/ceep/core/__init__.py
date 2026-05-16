@@ -1,6 +1,6 @@
 """
-neurowave.core — Core Data Structures and Simulation Engine
-===========================================================
+ceep.core — Core Data Structures and Simulation Engine
+======================================================
 
 This module provides the fundamental building blocks for electromagnetic
 simulation:
@@ -10,6 +10,7 @@ simulation:
 - **Config**: Simulation configuration (grid size, resolution, timestep)
 - **Engine**: Main simulation loop orchestrator
 - **Constants**: Physical constants (c, ε₀, μ₀, etc.)
+- **Backend**: NumPy/CuPy abstraction for GPU/CPU switching
 
 Mathematical Foundation
 -----------------------
@@ -30,3 +31,21 @@ References
 .. [2] A. Taflove and S. C. Hagness, "Computational Electrodynamics:
        The Finite-Difference Time-Domain Method," 3rd ed., Artech House, 2005.
 """
+
+# Import core classes
+from .grid import Grid2D
+from .grid_3d import Grid3D
+from .config import Config2D, Config3D
+from .backend import set_backend, get_backend, is_backend_available
+from .constants import PHYSICAL_CONSTANTS
+
+__all__ = [
+    'Grid2D',
+    'Grid3D',
+    'Config2D',
+    'Config3D',
+    'set_backend',
+    'get_backend',
+    'is_backend_available',
+    'PHYSICAL_CONSTANTS',
+]
