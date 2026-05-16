@@ -1,0 +1,94 @@
+{
+  "sequential": [
+    {
+      "grid": "300x300",
+      "batch_size": 1,
+      "steps": 100,
+      "time_mean": 1.6732938070017553,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.005378613105684289,
+      "cell_steps_total": 9000000
+    },
+    {
+      "grid": "300x300",
+      "batch_size": 4,
+      "steps": 100,
+      "time_mean": 6.568696792000992,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.005480539160193674,
+      "cell_steps_total": 36000000
+    },
+    {
+      "grid": "300x300",
+      "batch_size": 8,
+      "steps": 100,
+      "time_mean": 7.22260122399166,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.009968707639684462,
+      "cell_steps_total": 72000000
+    },
+    {
+      "grid": "600x600",
+      "batch_size": 4,
+      "steps": 50,
+      "time_mean": 7.611323848999746,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.009459589609954909,
+      "cell_steps_total": 72000000
+    }
+  ],
+  "batched": [
+    {
+      "grid": "300x300",
+      "batch_size": 1,
+      "steps": 100,
+      "time_mean": 1.6653488250012742,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.005404273185825266,
+      "cell_steps_total": 9000000
+    },
+    {
+      "grid": "300x300",
+      "batch_size": 4,
+      "steps": 100,
+      "time_mean": 7.283547858998645,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.004942646179707994,
+      "cell_steps_total": 36000000
+    },
+    {
+      "grid": "300x300",
+      "batch_size": 8,
+      "steps": 100,
+      "time_mean": 13.041797774996667,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.005520711273259901,
+      "cell_steps_total": 72000000
+    },
+    {
+      "grid": "600x600",
+      "batch_size": 4,
+      "steps": 50,
+      "time_mean": 13.513858219001122,
+      "time_std": 0.0,
+      "throughput_gcell_s": 0.005327864095744663,
+      "cell_steps_total": 72000000
+    }
+  ],
+  "accuracy": [
+    {
+      "grid": "300x300",
+      "batch_size": 1,
+      "steps": 100,
+      "max_error": 0.0,
+      "passes": true
+    },
+    {
+      "grid": "600x600",
+      "batch_size": 4,
+      "steps": 50,
+      "max_error": 0.0,
+      "passes": true
+    }
+  ]
+}
