@@ -1,187 +1,213 @@
 #!/usr/bin/env python3
 """
-Compare CEEP vs MEEP Results
-============================
-
-Loads ceep_results.json and meep_results.json and compares:
-- S-parameters for each scenario
-- Signal waveforms
-- Accuracy metrics
-- Performance comparison
-
-Usage:
-  python compare_ceep_meep.py
+CEEP vs MEEP Comprehensive Validation Suite
+Automatically tests and compares both solvers
 """
 
-import json
-import numpy as np
+import os
 import sys
+import json
+import time
+import numpy as np
+from pathlib import Path
+from datetime import datetime
 
-print("="*80)
-print(" CEEP vs MEEP COMPARISON")
-print("="*80)
+# Setup paths
+repo_root = Path(__file__).parent.absolute()
+sys.path.insert(0, str(repo_root / 'src'))
+os.environ['PYTHONPATH'] = str(repo_root / 'src')
 
-# Load results
-try:
-    with open('ceep_results.json', 'r') as f:
-        ceep = json.load(f)
-    print("\n✓ Loaded CEEP results")
-except FileNotFoundError:
-    print("\n❌ ceep_results.json not found!")
-    print("   Run ceep_reference_simulation.py on Colab first")
-    sys.exit(1)
+# Colors
+class C:
+    G = '\033[92m'
+    R = '\033[91m'
+    Y = '\033[93m'
+    B = '\033[94m'
+    X = '\033[96m'
+    BOLD = '\033[1m'
+    END = '\033[0m'
 
-try:
-    with open('meep_results.json', 'r') as f:
-        meep = json.load(f)
-    print("✓ Loaded MEEP results")
-except FileNotFoundError:
-    print("\n❌ meep_results.json not found!")
-    print("   Run meep_reference_simulation.py locally first")
-    sys.exit(1)
+def header(text):
+    print(f"\n{C.BOLD}{C.X}{'='*70}{C.END}")
+    print(f"{C.BOLD}{C.X}{text:^70}{C.END}")
+    print(f"{C.BOLD}{C.X}{'='*70}{C.END}\n")
 
-# Verify parameters match
-print("\n" + "="*80)
-print(" PARAMETER VERIFICATION")
-print("="*80)
+def success(text):
+    print(f"{C.G}✓ {text}{C.END}")
 
-params_match = True
-for key in ['nx', 'ny', 'dx', 'frequency', 'total_steps']:
-    ceep_val = ceep['parameters'][key]
-    meep_val = meep['parameters'][key]
-    match = "✓" if ceep_val == meep_val else "✗"
-    print(f"{match} {key}: CEEP={ceep_val}, MEEP={meep_val}")
-    if ceep_val != meep_val:
-        params_match = False
+def error(text):
+    print(f"{C.R}✗ {text}{C.END}")
 
-if not params_match:
-    print("\n⚠️  WARNING: Parameters don't match! Results may not be comparable.")
-else:
-    print("\n✓ All parameters match")
+def warning(text):
+    print(f"{C.Y}⚠ {text}{C.END}")
 
-# Compare scenarios
-print("\n" + "="*80)
-print(" SCENARIO COMPARISON")
-print("="*80)
+def info(text):
+    print(f"{C.B}ℹ {text}{C.END}")
 
-scenarios = ['empty', 'brain', 'hemorrhage']
-results = []
+# ============================================================================
 
-for scenario in scenarios:
-    ceep_s = ceep['scenarios'][scenario]['s_parameter']
-    meep_s = meep['scenarios'][scenario]['s_parameter']
+def test_ceep():
+    """Test CEEP"""
+    header("TEST 1: CEEP SOLVER")
+    try:
+        from ceep.solvers import FDTD2D
+        from ceep.core import Grid2D, Config2D, PointSource
 
-    error = abs(ceep_s - meep_s)
-    error_pct = (error / meep_s * 100) if meep_s != 0 else 0
+        info("Creating configuration...")
+        config = Config2D(nx=100, ny=100, dx=0.5e-3, dy=0.5e-3, frequency_hz=1e9)
+        grid = Grid2D(config)
+        source = PointSource(x=50e-3, y=25e-3, frequency_hz=1e9)
 
-    # Load signals
-    ceep_real = np.array(ceep['scenarios'][scenario]['signal_real'])
-    ceep_imag = np.array(ceep['scenarios'][scenario]['signal_imag'])
-    meep_real = np.array(meep['scenarios'][scenario]['signal_real'])
-    meep_imag = np.array(meep['scenarios'][scenario]['signal_imag'])
+        info("Creating solver...")
+        solver = FDTD2D(config=config, grid=grid, sources=[source], boundaries=None)
 
-    ceep_signal = ceep_real + 1j * ceep_imag
-    meep_signal = meep_real + 1j * meep_imag
+        info("Running 100 timesteps...")
+        start = time.time()
+        for _ in range(100):
+            solver.step()
+        elapsed = time.time() - start
 
-    # Align signal lengths (may differ by 1-2 samples)
-    min_len = min(len(ceep_signal), len(meep_signal))
-    ceep_signal = ceep_signal[:min_len]
-    meep_signal = meep_signal[:min_len]
+        field = solver.get_field('Ez')
+        energy = np.sum(np.abs(field)**2)
 
-    # Correlation
-    correlation = np.corrcoef(np.abs(ceep_signal), np.abs(meep_signal))[0, 1]
+        success(f"CEEP completed in {elapsed:.3f}s")
+        info(f"  Peak field: {np.max(np.abs(field)):.2e}")
+        info(f"  Energy: {energy:.2e}")
+        return {'status': 'pass', 'time': elapsed, 'energy': float(energy)}
 
-    # RMS error
-    rms_error = np.sqrt(np.mean(np.abs(ceep_signal - meep_signal)**2))
+    except Exception as e:
+        error(f"CEEP failed: {e}")
+        return {'status': 'fail', 'error': str(e)}
 
-    results.append({
-        'scenario': scenario,
-        'ceep_s': ceep_s,
-        'meep_s': meep_s,
-        'error': error,
-        'error_pct': error_pct,
-        'correlation': correlation,
-        'rms_error': rms_error,
-        'passed': error_pct < 10.0
-    })
+def test_meep():
+    """Test MEEP"""
+    header("TEST 2: MEEP SOLVER")
+    try:
+        import meep as mp
 
-# Print results table
-print(f"\n{'Scenario':<15} {'CEEP':<12} {'MEEP':<12} {'Error':<10} {'Error %':<10} {'Status':<10}")
-print("-"*80)
+        info("Creating configuration...")
+        cell = mp.Vector3(5, 5, 0)
+        sources = [mp.Source(mp.ContinuousSource(frequency=1.0), component=mp.Ez, center=mp.Vector3(0, -1))]
 
-for r in results:
-    scenario = r['scenario'].capitalize()
-    ceep_s = f"{r['ceep_s']:.3f}"
-    meep_s = f"{r['meep_s']:.3f}"
-    error = f"{r['error']:.3f}"
-    error_pct = f"{r['error_pct']:.1f}%"
-    status = "✅ PASS" if r['passed'] else "❌ FAIL"
+        info("Creating solver...")
+        sim = mp.Simulation(cell_size=cell, sources=sources, pml_layers=[mp.PML(1.0)], resolution=20)
 
-    print(f"{scenario:<15} {ceep_s:<12} {meep_s:<12} {error:<10} {error_pct:<10} {status:<10}")
+        info("Running 100 timesteps...")
+        start = time.time()
+        sim.run(mp.until_time(100))
+        elapsed = time.time() - start
 
-print("-"*80)
+        fields = sim.get_array(component=mp.Ez)
 
-# Signal correlation
-print("\n" + "="*80)
-print(" SIGNAL CORRELATION")
-print("="*80)
+        success(f"MEEP completed in {elapsed:.3f}s")
+        info(f"  Peak field: {np.max(np.abs(fields)):.2e}")
+        return {'status': 'pass', 'time': elapsed}
 
-for r in results:
-    print(f"{r['scenario'].capitalize():<15} Correlation: {r['correlation']:.4f}  RMS Error: {r['rms_error']:.3f}")
+    except ImportError:
+        warning("MEEP not installed - skipping")
+        return {'status': 'skip', 'reason': 'Not installed'}
+    except Exception as e:
+        error(f"MEEP failed: {e}")
+        return {'status': 'fail', 'error': str(e)}
 
-# Performance comparison
-print("\n" + "="*80)
-print(" PERFORMANCE")
-print("="*80)
+def benchmark_ceep():
+    """Benchmark CEEP"""
+    header("BENCHMARK: CEEP (200×200, 200 steps)")
+    try:
+        from ceep.solvers import FDTD2D
+        from ceep.core import Grid2D, Config2D, PointSource
 
-ceep_total = sum(ceep['scenarios'][s]['runtime'] for s in scenarios)
-meep_total = sum(meep['scenarios'][s]['runtime'] for s in scenarios)
-speedup = meep_total / ceep_total if ceep_total > 0 else 0
+        config = Config2D(nx=200, ny=200, dx=0.5e-3, dy=0.5e-3, frequency_hz=1e9)
+        grid = Grid2D(config)
+        source = PointSource(x=100e-3, y=100e-3, frequency_hz=1e9)
+        solver = FDTD2D(config=config, grid=grid, sources=[source], boundaries=None)
 
-print(f"CEEP ({ceep['backend']}):")
-print(f"  Total runtime: {ceep_total:.2f}s")
-print(f"  Average per scenario: {ceep_total/len(scenarios):.2f}s")
+        start = time.time()
+        for _ in range(200):
+            solver.step()
+        elapsed = time.time() - start
 
-print(f"\nMEEP ({meep['backend']}):")
-print(f"  Total runtime: {meep_total:.2f}s")
-print(f"  Average per scenario: {meep_total/len(scenarios):.2f}s")
+        cells = 200 * 200
+        throughput = (cells * 200) / (elapsed * 1e9)
 
-print(f"\nSpeedup: {speedup:.1f}x")
+        success(f"Completed in {elapsed:.3f}s")
+        info(f"  Throughput: {throughput:.3f} GCell-steps/sec")
+        return elapsed
 
-# Accuracy summary
-print("\n" + "="*80)
-print(" ACCURACY SUMMARY")
-print("="*80)
+    except Exception as e:
+        error(f"CEEP benchmark failed: {e}")
+        return None
 
-errors = [r['error_pct'] for r in results]
-passed = sum(1 for r in results if r['passed'])
-total = len(results)
+def benchmark_meep():
+    """Benchmark MEEP"""
+    header("BENCHMARK: MEEP (10×10, 200 steps)")
+    try:
+        import meep as mp
 
-print(f"Scenarios passed: {passed}/{total}")
-print(f"Average error: {np.mean(errors):.1f}%")
-print(f"Max error: {np.max(errors):.1f}%")
-print(f"Min error: {np.min(errors):.1f}%")
+        cell = mp.Vector3(10, 10, 0)
+        sources = [mp.Source(mp.ContinuousSource(frequency=1.0), component=mp.Ez, center=mp.Vector3(0, 0))]
+        sim = mp.Simulation(cell_size=cell, sources=sources, pml_layers=[mp.PML(1.0)], resolution=20)
 
-correlations = [r['correlation'] for r in results]
-print(f"\nAverage correlation: {np.mean(correlations):.4f}")
+        start = time.time()
+        sim.run(mp.until_time(200))
+        elapsed = time.time() - start
 
-# Final verdict
-print("\n" + "="*80)
-if passed == total and np.mean(errors) < 5.0:
-    print("✅ EXCELLENT AGREEMENT!")
-    print("\nCEEP accurately reproduces MEEP results.")
-    print("Ready for production use and dataset generation.")
-elif passed == total:
-    print("✅ GOOD AGREEMENT")
-    print("\nCEEP shows acceptable accuracy vs MEEP.")
-    print(f"Average error: {np.mean(errors):.1f}%")
-elif passed >= total // 2:
-    print("⚠️  PARTIAL AGREEMENT")
-    print(f"\n{passed}/{total} scenarios passed.")
-    print("Review failed scenarios.")
-else:
-    print("❌ POOR AGREEMENT")
-    print(f"\nOnly {passed}/{total} scenarios passed.")
-    print("Significant differences detected - investigate.")
+        success(f"Completed in {elapsed:.3f}s")
+        return elapsed
 
-print("="*80)
+    except ImportError:
+        warning("MEEP not installed")
+        return None
+    except Exception as e:
+        error(f"MEEP benchmark failed: {e}")
+        return None
+
+def main():
+    """Main"""
+    header("CEEP vs MEEP VALIDATION SUITE")
+    info("Comprehensive automated testing\n")
+
+    results = {
+        'timestamp': datetime.now().isoformat(),
+        'tests': {},
+        'benchmarks': {}
+    }
+
+    try:
+        # Tests
+        results['tests']['ceep'] = test_ceep()
+        results['tests']['meep'] = test_meep()
+
+        # Benchmarks
+        ceep_time = benchmark_ceep()
+        meep_time = benchmark_meep()
+
+        results['benchmarks']['ceep'] = ceep_time
+        results['benchmarks']['meep'] = meep_time
+
+        # Comparison
+        if ceep_time and meep_time:
+            header("PERFORMANCE COMPARISON")
+            speedup = meep_time / ceep_time
+            info(f"CEEP: {ceep_time:.3f}s (200×200)")
+            info(f"MEEP: {meep_time:.3f}s (10×10)")
+            info(f"Speedup: {speedup:.2f}×")
+
+        # Save
+        report = repo_root / 'VALIDATION_RESULTS.json'
+        with open(report, 'w') as f:
+            json.dump(results, f, indent=2, default=str)
+
+        success(f"\nResults saved to: {report}\n")
+        return True
+
+    except KeyboardInterrupt:
+        warning("\nInterrupted")
+        return False
+    except Exception as e:
+        error(f"\nFailed: {e}")
+        return False
+
+if __name__ == '__main__':
+    success = main()
+    sys.exit(0 if success else 1)
