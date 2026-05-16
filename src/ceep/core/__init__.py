@@ -37,7 +37,7 @@ from .grid import Grid2D
 from .grid_3d import Grid3D
 from .config import GridConfig, SimulationConfig, SimulationMode, Backend
 from .backend import set_backend, get_backend, is_backend_available
-from .constants import PHYSICAL_CONSTANTS
+from . import constants
 
 # Legacy aliases for backward compatibility
 Config2D = GridConfig
@@ -55,5 +55,5 @@ __all__ = [
     'set_backend',
     'get_backend',
     'is_backend_available',
-    'PHYSICAL_CONSTANTS',
+    'constants',
 ]
