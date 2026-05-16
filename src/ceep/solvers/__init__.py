@@ -33,9 +33,11 @@ Computational Complexity
 from ceep.solvers.fdtd_2d import FDTD2D
 from ceep.solvers.fdtd_2d_batched import BatchedFDTD2D
 from ceep.solvers.fdtd_3d import FDTD3D
+from ceep.solvers.fdtd_3d_batched import BatchedFDTD3D
 
 __all__ = [
     'FDTD2D',
     'BatchedFDTD2D',
     'FDTD3D',
+    'BatchedFDTD3D',
 ]
