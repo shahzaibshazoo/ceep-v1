@@ -35,6 +35,7 @@ from __future__ import annotations
 from typing import List, Tuple, Optional, Dict
 
 import numpy as np
+from ceep.core.backend import get_backend_module, zeros, ones, asarray, array, full, asnumpy
 
 
 class BatchedFDTD2D:
@@ -136,16 +137,16 @@ class BatchedFDTD2D:
 
     def _build(self):
         """Transfer all arrays to GPU and precompute coefficients."""
-        import cupy as cp
-        self.xp = cp
+        from ceep.core.backend import get_backend_module, to_numpy, to_backend
+        self.xp = get_backend_module()
 
         B, nx, ny = self.batch, self.nx, self.ny
         dt, dx, dy = self.dt, self.dx, self.dy
 
         # Field arrays: (batch, nx, ny)
-        self.ez = cp.zeros((B, nx, ny), dtype=cp.float64)
-        self.hx = cp.zeros((B, nx, ny), dtype=cp.float64)
-        self.hy = cp.zeros((B, nx, ny), dtype=cp.float64)
+        self.ez = zeros((B, nx, ny), dtype=np.float64)
+        self.hx = zeros((B, nx, ny), dtype=np.float64)
+        self.hy = zeros((B, nx, ny), dtype=np.float64)
 
         # Update coefficients: (1, nx, ny) — broadcast over batch
         from ceep.core.constants import EPS_0, MU_0
@@ -158,10 +159,10 @@ class BatchedFDTD2D:
         db = np.full((nx, ny), dt / MU_0, dtype=np.float64)
 
         # Transfer to GPU with batch broadcast dimension
-        self.ca = cp.asarray(ca)[None, :, :]  # (1, nx, ny)
-        self.cb = cp.asarray(cb)[None, :, :]
-        self.da = cp.asarray(da)[None, :, :]
-        self.db = cp.asarray(db)[None, :, :]
+        self.ca = asarray(ca)[None, :, :]  # (1, nx, ny)
+        self.cb = asarray(cb)[None, :, :]
+        self.da = asarray(da)[None, :, :]
+        self.db = asarray(db)[None, :, :]
         self.inv_dx = 1.0 / dx
         self.inv_dy = 1.0 / dy
 
@@ -178,20 +179,20 @@ class BatchedFDTD2D:
         SOURCE_AMPLITUDE_SCALE = 1.049e10
         waveform = waveform * SOURCE_AMPLITUDE_SCALE
 
-        self.waveform = cp.asarray(waveform)  # (total_steps,)
+        self.waveform = asarray(waveform)  # (total_steps,)
 
         # CPML setup (simplified σ-profile on each face)
-        self._setup_cpml(cp)
+        self._setup_cpml()
 
         # Probe recording buffer: (batch, num_probes, total_steps)
-        self.probe_data = cp.zeros(
+        self.probe_data = zeros(
             (B, len(self.probe_positions), self.total_steps),
-            dtype=cp.float64
+            dtype=np.float64
         )
 
         self._built = True
 
-    def _setup_cpml(self, cp):
+    def _setup_cpml(self):
         """Setup CPML absorbing boundaries for batched solver."""
         n = self.cpml_n
         nx, ny = self.nx, self.ny
@@ -236,10 +237,10 @@ class BatchedFDTD2D:
         # Since 0 < b < 1, we get -1 < c < 0 (negative for damping)
         c_profile = b_profile - 1.0
 
-        self.cpml_b_x = cp.asarray(b_profile)
-        self.cpml_c_x = cp.asarray(c_profile)
-        self.cpml_b_y = cp.asarray(b_profile)
-        self.cpml_c_y = cp.asarray(c_profile)
+        self.cpml_b_x = asarray(b_profile)
+        self.cpml_c_x = asarray(c_profile)
+        self.cpml_b_y = asarray(b_profile)
+        self.cpml_c_y = asarray(c_profile)
 
         # Psi arrays for each face
         # Naming convention: psi_{field}_{direction}_{side}
@@ -257,29 +258,25 @@ class BatchedFDTD2D:
         #   Shape: (batch, nx, n) - indexed as psi[:, i_x, j_y]
 
         # X-direction PML (affects Hy and Ez)
-        self.psi_hxy_lo = cp.zeros((B, n, ny), dtype=cp.float64)  # Left
-        self.psi_hxy_hi = cp.zeros((B, n, ny), dtype=cp.float64)  # Right
-        self.psi_ezx_lo = cp.zeros((B, n, ny), dtype=cp.float64)  # Left
-        self.psi_ezx_hi = cp.zeros((B, n, ny), dtype=cp.float64)  # Right
+        self.psi_hxy_lo = zeros((B, n, ny), dtype=np.float64)  # Left
+        self.psi_hxy_hi = zeros((B, n, ny), dtype=np.float64)  # Right
+        self.psi_ezx_lo = zeros((B, n, ny), dtype=np.float64)  # Left
+        self.psi_ezx_hi = zeros((B, n, ny), dtype=np.float64)  # Right
 
         # Y-direction PML (affects Hx and Ez)
-        self.psi_hyx_lo = cp.zeros((B, nx, n), dtype=cp.float64)  # Bottom
-        self.psi_hyx_hi = cp.zeros((B, nx, n), dtype=cp.float64)  # Top
-        self.psi_ezy_lo = cp.zeros((B, nx, n), dtype=cp.float64)  # Bottom
-        self.psi_ezy_hi = cp.zeros((B, nx, n), dtype=cp.float64)  # Top
+        self.psi_hyx_lo = zeros((B, nx, n), dtype=np.float64)  # Bottom
+        self.psi_hyx_hi = zeros((B, nx, n), dtype=np.float64)  # Top
+        self.psi_ezy_lo = zeros((B, nx, n), dtype=np.float64)  # Bottom
+        self.psi_ezy_hi = zeros((B, nx, n), dtype=np.float64)  # Top
 
     def _apply_h_cpml(self):
         """Apply CPML to H-field in PML regions.
 
-        In PML regions, H is updated using psi variables instead of direct derivatives.
-        This provides exponential absorption of outgoing waves.
+        Apply standard update structure but use psi instead of derivatives.
         """
         cp = self.xp
         n = self.cpml_n
         nx, ny = self.nx, self.ny
-
-        from ceep.core.constants import MU_0
-        dt_mu = self.dt / MU_0
 
         # X-direction PML: affects Hy (left and right boundaries)
         for i in range(n):
@@ -290,8 +287,11 @@ class BatchedFDTD2D:
                     self.cpml_b_x[i] * self.psi_hxy_lo[:, i, :]
                     + self.cpml_c_x[i] * dEz_dx
                 )
-                # Update Hy using psi
-                self.hy[:, i, :] = self.hy[:, i, :] + dt_mu * self.psi_hxy_lo[:, i, :]
+                # Standard update form: Hy = da * Hy + db * psi
+                self.hy[:, i, :] = (
+                    self.da[0, i, :] * self.hy[:, i, :]
+                    + self.db[0, i, :] * self.psi_hxy_lo[:, i, :]
+                )
 
             # Right boundary
             x_idx = nx - n + i
@@ -301,8 +301,10 @@ class BatchedFDTD2D:
                     self.cpml_b_x[n-1-i] * self.psi_hxy_hi[:, i, :]
                     + self.cpml_c_x[n-1-i] * dEz_dx
                 )
-                # Update Hy using psi
-                self.hy[:, x_idx, :] = self.hy[:, x_idx, :] + dt_mu * self.psi_hxy_hi[:, i, :]
+                self.hy[:, x_idx, :] = (
+                    self.da[0, x_idx, :] * self.hy[:, x_idx, :]
+                    + self.db[0, x_idx, :] * self.psi_hxy_hi[:, i, :]
+                )
 
         # Y-direction PML: affects Hx (bottom and top boundaries)
         for j in range(n):
@@ -313,8 +315,10 @@ class BatchedFDTD2D:
                     self.cpml_b_y[j] * self.psi_hyx_lo[:, :, j]
                     + self.cpml_c_y[j] * dEz_dy
                 )
-                # Update Hx using psi (minus sign)
-                self.hx[:, :, j] = self.hx[:, :, j] - dt_mu * self.psi_hyx_lo[:, :, j]
+                self.hx[:, :, j] = (
+                    self.da[0, :, j] * self.hx[:, :, j]
+                    - self.db[0, :, j] * self.psi_hyx_lo[:, :, j]
+                )
 
             # Top boundary
             y_idx = ny - n + j
@@ -324,8 +328,10 @@ class BatchedFDTD2D:
                     self.cpml_b_y[n-1-j] * self.psi_hyx_hi[:, :, j]
                     + self.cpml_c_y[n-1-j] * dEz_dy
                 )
-                # Update Hx using psi (minus sign)
-                self.hx[:, :, y_idx] = self.hx[:, :, y_idx] - dt_mu * self.psi_hyx_hi[:, :, j]
+                self.hx[:, :, y_idx] = (
+                    self.da[0, :, y_idx] * self.hx[:, :, y_idx]
+                    - self.db[0, :, y_idx] * self.psi_hyx_hi[:, :, j]
+                )
 
     def _apply_e_cpml(self):
         """Apply CPML to E-field in PML regions.

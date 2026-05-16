@@ -456,3 +456,20 @@ def get_array_module(arr: ArrayType):
 def is_gpu_active() -> bool:
     """Check if the current backend is GPU-based."""
     return _backend_manager.active in (Backend.CUPY,)
+
+
+def array(arr, dtype=None) -> ArrayType:
+    """Create array from sequence (on active backend)."""
+    xp = _backend_manager.module
+    return xp.array(arr, dtype=dtype)
+
+
+def full(shape: Tuple[int, ...], fill_value, dtype=np.float64) -> ArrayType:
+    """Create array filled with a constant (on active backend)."""
+    xp = _backend_manager.module
+    return xp.full(shape, fill_value, dtype=dtype)
+
+
+def asnumpy(arr: ArrayType) -> np.ndarray:
+    """Convert array to NumPy (alias for to_numpy for CuPy compatibility)."""
+    return to_numpy(arr)
